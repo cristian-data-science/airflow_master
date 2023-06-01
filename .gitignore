@@ -1,4 +1,4 @@
 logs
 dags/**/*.env_dags
 .env
-
+__pycache__/
