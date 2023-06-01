@@ -2,10 +2,10 @@ version: '3.4'
 
 x-common:
   &common
-  image: apache/airflow:2.3.0
+  build: .
   user: "${AIRFLOW_UID}:0"
   env_file: 
-    - .env
+    - ./dags/.env
   volumes:
     - ./dags:/opt/airflow/dags
     - ./logs:/opt/airflow/logs
@@ -31,7 +31,7 @@ services:
       interval: 5s
       retries: 5
     env_file:
-      - .env
+      - ./dags/.env
 
   scheduler:
     <<: *common
