@@ -1,3 +1,3 @@
 logs
 plugins
-**/dags/.env
+dags/**/*.env
