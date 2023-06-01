@@ -6,6 +6,7 @@ import os
 import pyodbc
 import pandas as pd
 
+
 # Cargamos las variables de entorno
 load_dotenv()
 
@@ -13,7 +14,7 @@ default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2023, 6, 1),
-    'email': ['your-email@domain.com'],
+    'email': ['cristian.gutierrez@patagonia.com'],
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 1,
