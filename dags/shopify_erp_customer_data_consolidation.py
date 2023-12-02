@@ -32,7 +32,7 @@ default_args = {
     'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=60),
-    'snowflake_customer_table_columns': [
+    'snowflake_shopify_customer_table_columns': [
         ('SHOPIFY_ID', 'NUMBER'),
         ('EMAIL', 'VARCHAR(255)'),
         ('ACCEPTS_MARKETING', 'BOOLEAN'),
@@ -231,10 +231,10 @@ def create_snowflake_temporary_table(cursor, temp_table_name):
 
     The function uses the provided cursor to execute an SQL command that
     creates a temporary table in Snowflake. The table structure is defined
-    based on the columns specified in `snowflake_customer_table_columns`
-    within `default_args`.
+    based on the columns specified in
+    `snowflake_shopify_customer_table_columns` within `default_args`.
     """
-    columns = default_args['snowflake_customer_table_columns']
+    columns = default_args['snowflake_shopify_customer_table_columns']
     create_temp_table_sql = f"CREATE TEMPORARY TABLE {temp_table_name} ("
     create_temp_table_sql += \
         ", ".join([f"{name} {type}" for name, type in columns]) + ");"
@@ -275,12 +275,13 @@ def write_data_to_snowflake(df, table_name):
         print(f"Successfully wrote {nrows} rows to "
               f"{temporary_table_name} in Snowflake.")
 
-        # Generate UPDATE y INSERT by snowflake_customer_table_columns
+        # Generate UPDATE y INSERT by snowflake_shopify_customer_table_columns
         update_set_parts = []
         insert_columns = []
         insert_values = []
 
-        for column, _ in default_args['snowflake_customer_table_columns']:
+        for column, _ in default_args[
+                'snowflake_shopify_customer_table_columns']:
             update_set_parts.append(
                 f"{table_name}.{column} = new_data.{column}")
             insert_columns.append(column)
