@@ -25,7 +25,7 @@ SHOPIFY_API_URL = \
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2023, 11, 19),
+    'start_date': datetime(2023, 12, 11),
     'email': ['enrique.urrutia@patagonia.com'],
     'phone': 0,
     'email_on_failure': True,
@@ -213,6 +213,8 @@ def customers_to_dataframe(customers_datalist):
                  'ACCEPTS_MARKETING_UPDATED_AT', 'MARKETING_OPT_IN_LEVEL',
                  'ADMIN_GRAPHQL_API_ID']]
         print(df.head().to_string())
+        print(f'Creating/updating {len(customers_datalist)} '
+              'customers from Shopify.')
         return df
     else:
         print("No data received from get_shopify_customers")
