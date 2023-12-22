@@ -12,11 +12,6 @@ import pandas as pd
 
 # Load environment variables from .env file
 load_dotenv()
-SHOPIFY_API_KEY = os.getenv('SHOPIFY_API_KEY')
-SHOPIFY_API_PASSWORD = os.getenv('SHOPIFY_API_PASSWORD')
-SHOPIFY_API_URL = \
-    os.getenv('SHOPIFY_API_URL') + os.getenv('SHOPIFY_API_VERSION') + '/'
-
 BYOD_SERVER = os.getenv('BYOD_SERVER')
 BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
