@@ -3,12 +3,10 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from snowflake.connector.pandas_tools import write_pandas
-from snowflake.connector import connect
 from dotenv import load_dotenv
 from requests.auth import HTTPBasicAuth
-from urllib.parse import urljoin, urlencode, urlparse, parse_qs
+from urllib.parse import urljoin
 import os
-import pyodbc
 import requests
 import pandas as pd
 
@@ -25,13 +23,14 @@ SHOPIFY_API_URL = \
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2023, 12, 11),
+    'start_date': datetime(2023, 12, 22),
     'email': ['enrique.urrutia@patagonia.com'],
     'phone': 0,
     'email_on_failure': True,
     'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=60),
+    'snowflake_conn_id': 'patagonia_snowflake_connection',
     'snowflake_shopify_customer_table_columns': [
         ('SHOPIFY_ID', 'NUMBER'),
         ('EMAIL', 'VARCHAR(255)'),
@@ -94,7 +93,6 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
     Raises:
     - HTTPError: If API request fails.
     """
-    next_page_info = None
     customers = []
     params = {"limit": batch_limit}
     if days:
@@ -139,12 +137,6 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
                 if 'rel="next"' in link:
                     # Extract the URL for the next page of results.
                     url = link[link.index("<")+1:link.index(">")]
-
-                    # Parse the query string from the URL to
-                    # extract the 'page_info'.
-                    query_string = urlparse(url).query
-                    next_page_info = parse_qs(
-                        query_string).get('page_info', [None])[0]
 
                     # Clear the params for the next request, as the 'next' URL
                     # already contains the required parameters.
@@ -215,12 +207,13 @@ def customers_to_dataframe(customers_datalist):
         print(df.head().to_string())
         print(f'Creating/updating {len(customers_datalist)} '
               'customers from Shopify.')
+        print(df.shape)
         return df
     else:
         print("No data received from get_shopify_customers")
 
 
-def create_snowflake_temporary_table(cursor, temp_table_name):
+def create_snowflake_temporary_table(cursor, temp_table_name, columns):
     """
     Creates a temporary table in Snowflake with a defined column structure.
 
@@ -233,10 +226,8 @@ def create_snowflake_temporary_table(cursor, temp_table_name):
 
     The function uses the provided cursor to execute an SQL command that
     creates a temporary table in Snowflake. The table structure is defined
-    based on the columns specified in
-    `snowflake_shopify_customer_table_columns` within `default_args`.
+    based on the columns specified in columns.
     """
-    columns = default_args['snowflake_shopify_customer_table_columns']
     create_temp_table_sql = f"CREATE TEMPORARY TABLE {temp_table_name} ("
     create_temp_table_sql += \
         ", ".join([f"{name} {type}" for name, type in columns]) + ");"
@@ -245,7 +236,9 @@ def create_snowflake_temporary_table(cursor, temp_table_name):
     cursor.execute(create_temp_table_sql)
 
 
-def write_data_to_snowflake(df, table_name):
+def write_data_to_snowflake(
+        df, table_name, columns, primary_key, temporary_table_name
+        ):
     """
     Writes a Pandas DataFrame to a Snowflake table.
 
@@ -258,16 +251,17 @@ def write_data_to_snowflake(df, table_name):
     write the DataFrame.
     """
     # Use the SnowflakeHook to get a connection object
-    hook = SnowflakeHook(snowflake_conn_id='patagonia_snowflake_connection')
+    hook = SnowflakeHook(snowflake_conn_id=default_args['snowflake_conn_id'])
     conn = hook.get_conn()
     cursor = conn.cursor()
 
-    # Create temporary table
-    temporary_table_name = "TEMP_SHOPIFY_CUSTOMERS"
-
     try:
         # Create Temporary Table
-        create_snowflake_temporary_table(cursor, temporary_table_name)
+        create_snowflake_temporary_table(
+            cursor,
+            temporary_table_name,
+            columns
+        )
 
         # Write the DataFrame to Snowflake Temporary Table
         success, nchunks, nrows, _ = \
@@ -282,8 +276,7 @@ def write_data_to_snowflake(df, table_name):
         insert_columns = []
         insert_values = []
 
-        for column, _ in default_args[
-                'snowflake_shopify_customer_table_columns']:
+        for column, _ in columns:
             update_set_parts.append(
                 f"{table_name}.{column} = new_data.{column}")
             insert_columns.append(column)
@@ -297,23 +290,40 @@ def write_data_to_snowflake(df, table_name):
         cursor.execute('BEGIN')
         merge_sql = f"""
         MERGE INTO {table_name} USING {temporary_table_name} AS new_data
-        ON {table_name}.SHOPIFY_ID = new_data.SHOPIFY_ID
+        ON {table_name}.{primary_key} = new_data.{primary_key}
         WHEN MATCHED THEN
             UPDATE SET
-                {update_set_sql}
+                {update_set_sql},
+                snowflake_updated_at = CURRENT_TIMESTAMP
         WHEN NOT MATCHED THEN
-            INSERT ({insert_columns_sql})
-            VALUES ({insert_values_sql});
+            INSERT ({insert_columns_sql},
+                    snowflake_created_at, snowflake_updated_at)
+            VALUES ({insert_values_sql},
+                    CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
          """
         cursor.execute(merge_sql)
 
-        duplicates = check_duplicates_sql(cursor, table_name)
+        duplicates = check_duplicates_sql(cursor, table_name, primary_key)
         if duplicates:
             cursor.execute("ROLLBACK")
             print(f"There are duplicates: {duplicates}. ROLLBACK executed.")
         else:
             cursor.execute("COMMIT")
-            print(f'Table {table_name} modified successfully!')
+            cursor.execute(f'''SELECT COUNT(*) FROM {table_name}
+                           WHERE DATE(snowflake_created_at) = CURRENT_DATE''')
+            new_rows = cursor.fetchone()
+            cursor.execute(f'''SELECT COUNT(*) FROM {table_name}
+                           WHERE DATE(snowflake_updated_at) = CURRENT_DATE
+                            AND DATE(snowflake_created_at) <> CURRENT_DATE''')
+            updated_rows = cursor.fetchone()
+
+            print(f'''
+            [EXECUTION RESUME]
+            Table {table_name} modified successfully!
+            - New inserted rows: {new_rows[0]}
+            - Updated rows: {updated_rows[0]}
+            ''')
+
     except Exception as e:
         cursor.execute("ROLLBACK")
         raise e
@@ -336,10 +346,16 @@ def run_get_shopify_customers():
         get_shopify_customers(batch_limit=200, response_limit=None, days=3)
     customers_dataframe = \
         customers_to_dataframe(customers_datalist)
-    write_data_to_snowflake(customers_dataframe, 'SHOPIFY_CUSTOMERS')
+    write_data_to_snowflake(
+        customers_dataframe,
+        'SHOPIFY_CUSTOMERS',
+        default_args['snowflake_shopify_customer_table_columns'],
+        'SHOPIFY_ID',
+        'TEMP_SHOPIFY_CUSTOMERS'
+    )
 
 
-def check_duplicates_sql(cursor, table_name):
+def check_duplicates_sql(cursor, table_name, primary_key):
     """
     Checks for duplicate records in a specified Snowflake table.
 
@@ -360,9 +376,9 @@ def check_duplicates_sql(cursor, table_name):
     In case of an exception, it performs a rollback and prints the error.
     """
     check_duplicates_sql = f"""
-    SELECT SHOPIFY_ID, COUNT(*)
+    SELECT {primary_key}, COUNT(*)
     FROM {table_name}
-    GROUP BY SHOPIFY_ID
+    GROUP BY {primary_key}
     HAVING COUNT(*) > 1;
     """
     try:
