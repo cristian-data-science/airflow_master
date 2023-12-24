@@ -429,7 +429,7 @@ def check_duplicates_sql(cursor, table_name, primary_key):
         print("ROLLBACK executed due to an error:", e)
 
 
-def run_get_byod_customers(**context):
+def run_get_byod_salesline(**context):
     # start_date = datetime(2021, 10, 5)
     # end_date = datetime(2021, 10, 6)
     execution_date = context['execution_date']
@@ -447,7 +447,7 @@ def run_get_byod_customers(**context):
 
 # Task definitions
 task_1 = PythonOperator(
-    task_id='get_byod_customers',
-    python_callable=run_get_byod_customers,
+    task_id='get_byod_salesline',
+    python_callable=run_get_byod_salesline,
     dag=dag,
 )
