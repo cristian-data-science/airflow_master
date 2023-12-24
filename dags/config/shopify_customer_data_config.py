@@ -11,7 +11,6 @@ default_args = {
     'email_on_retry': False,
     'retries': 1,
     'retry_delay': timedelta(minutes=60),
-    'snowflake_conn_id': 'patagonia_snowflake_connection',
     'snowflake_shopify_customer_table_columns': [
         ('SHOPIFY_ID', 'NUMBER'),
         ('EMAIL', 'VARCHAR(255)'),
