@@ -322,7 +322,7 @@ def get_massive_byod_salesline(
 
 
 def create_snowflake_temporary_table(cursor, temp_table_name, columns):
-    """
+    '''
     Creates a temporary table in Snowflake with a defined column structure.
 
     This function is useful for preparing the Snowflake environment for data
@@ -335,10 +335,10 @@ def create_snowflake_temporary_table(cursor, temp_table_name, columns):
     The function uses the provided cursor to execute an SQL command that
     creates a temporary table in Snowflake. The table structure is defined
     based on the columns specified in columns.
-    """
-    create_temp_table_sql = f"CREATE TEMPORARY TABLE {temp_table_name} ("
+    '''
+    create_temp_table_sql = f'CREATE TEMPORARY TABLE {temp_table_name} ('
     create_temp_table_sql += \
-        ", ".join([f"{name} {type}" for name, type in columns]) + ");"
+        ', '.join([f'{name} {type}' for name, type in columns]) + ');'
 
     print(create_temp_table_sql)
     cursor.execute(create_temp_table_sql)
@@ -347,7 +347,7 @@ def create_snowflake_temporary_table(cursor, temp_table_name, columns):
 def write_data_to_snowflake(
         df, table_name, columns, primary_key, temporary_table_name
         ):
-    """
+    '''
     Writes a Pandas DataFrame to a Snowflake table.
 
     Parameters:
@@ -357,7 +357,7 @@ def write_data_to_snowflake(
     Utilizes the SnowflakeHook from Airflow to establish a connection.
     The write_pandas method from snowflake-connector-python is used to
     write the DataFrame.
-    """
+    '''
     # Use the SnowflakeHook to get a connection object
     hook = SnowflakeHook(snowflake_conn_id='patagonia_snowflake_connection')
     conn = hook.get_conn()
@@ -375,9 +375,9 @@ def write_data_to_snowflake(
         success, nchunks, nrows, _ = \
             write_pandas(conn, df, temporary_table_name)
         if not success:
-            raise Exception(f"Failed to write to {table_name} in Snowflake.")
-        print(f"Successfully wrote {nrows} rows to "
-              f"{temporary_table_name} in Snowflake.")
+            raise Exception(f'Failed to write to {table_name} in Snowflake.')
+        print(f'Successfully wrote {nrows} rows to '
+              f'{temporary_table_name} in Snowflake.')
 
         # Generate UPDATE y INSERT by snowflake_shopify_customer_table_columns
         update_set_parts = []
@@ -386,17 +386,17 @@ def write_data_to_snowflake(
 
         for column, _ in columns:
             update_set_parts.append(
-                f"{table_name}.{column} = new_data.{column}")
+                f'{table_name}.{column} = new_data.{column}')
             insert_columns.append(column)
-            insert_values.append(f"new_data.{column}")
+            insert_values.append(f'new_data.{column}')
 
-        update_set_sql = ",\n".join(update_set_parts)
-        insert_columns_sql = ", ".join(insert_columns)
-        insert_values_sql = ", ".join(insert_values)
+        update_set_sql = ',\n'.join(update_set_parts)
+        insert_columns_sql = ', '.join(insert_columns)
+        insert_values_sql = ', '.join(insert_values)
 
         # Snowflake Merge execute
         cursor.execute('BEGIN')
-        merge_sql = f"""
+        merge_sql = f'''
         MERGE INTO {table_name} USING {temporary_table_name} AS new_data
         ON {table_name}.{primary_key} = new_data.{primary_key}
         WHEN MATCHED THEN
@@ -408,15 +408,15 @@ def write_data_to_snowflake(
                     snowflake_created_at, snowflake_updated_at)
             VALUES ({insert_values_sql},
                     CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-         """
+         '''
         cursor.execute(merge_sql)
 
         duplicates = check_duplicates_sql(cursor, table_name, primary_key)
         if duplicates:
-            cursor.execute("ROLLBACK")
-            print(f"There are duplicates: {duplicates}. ROLLBACK executed.")
+            cursor.execute('ROLLBACK')
+            print(f'There are duplicates: {duplicates}. ROLLBACK executed.')
         else:
-            cursor.execute("COMMIT")
+            cursor.execute('COMMIT')
             cursor.execute(f'''SELECT COUNT(*) FROM {table_name}
                            WHERE DATE(snowflake_created_at) = CURRENT_DATE''')
             new_rows = cursor.fetchone()
@@ -433,14 +433,14 @@ def write_data_to_snowflake(
             ''')
 
     except Exception as e:
-        cursor.execute("ROLLBACK")
+        cursor.execute('ROLLBACK')
         raise e
     finally:
         cursor.close()
 
 
 def check_duplicates_sql(cursor, table_name, primary_key):
-    """
+    '''
     Checks for duplicate records in a specified Snowflake table.
 
     This function executes an SQL query to identify duplicate entries
@@ -458,19 +458,19 @@ def check_duplicates_sql(cursor, table_name, primary_key):
     and counts occurrences, looking for counts greater than one.
     If duplicates are found, it returns the list of these records.
     In case of an exception, it performs a rollback and prints the error.
-    """
-    check_duplicates_sql = f"""
+    '''
+    check_duplicates_sql = f'''
     SELECT {primary_key}, COUNT(*)
     FROM {table_name}
     GROUP BY {primary_key}
     HAVING COUNT(*) > 1;
-    """
+    '''
     try:
         cursor.execute(check_duplicates_sql)
         return cursor.fetchall()
     except Exception as e:
-        cursor.execute("ROLLBACK")
-        print("ROLLBACK executed due to an error:", e)
+        cursor.execute('ROLLBACK')
+        print('ROLLBACK executed due to an error:', e)
 
 
 def run_get_byod_salesline(**context):
@@ -488,7 +488,7 @@ def run_get_byod_salesline(**context):
     # start_date = datetime(2021, 10, 5)
     # end_date = datetime(2021, 10, 6)
     execution_date = context['execution_date']
-    print(f"Execution Date: {execution_date}")
+    print(f'Execution Date: {execution_date}')
 
     end_date = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
