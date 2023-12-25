@@ -180,6 +180,20 @@ def get_salesline_for_period(
 
 
 def process_data(df):
+    '''
+    Processes the DataFrame by formatting date columns and generating a primary
+    key.
+
+    Parameters:
+    - df (pandas.DataFrame): DataFrame containing the sales data.
+
+    The function formats date columns into a specific string format and creates
+    a primary key column 'SALESLINEPK'. It fills missing values in certain
+    columns and converts them to the appropriate data type.
+
+    Returns:
+    - pandas.DataFrame: The processed DataFrame ready for further operations.
+    '''
     df['SYNCSTARTDATETIME'] = \
         df['SYNCSTARTDATETIME'].dt.strftime('%Y-%m-%d %H:%M:%S')
     df['CONFIRMEDDLV'] = \
