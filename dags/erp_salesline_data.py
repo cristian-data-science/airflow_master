@@ -127,6 +127,21 @@ def get_salesline_for_period(
         cursor, table_name, columns, date, period,
         batch_size=None, offset=None
         ):
+    '''
+    Retrieves sales data for a specific period from an external data source.
+
+    Parameters:
+    - cursor: Cursor for SQL queries execution.
+    - table_name (str): Table name for data extraction.
+    - columns (str): Columns to select in SQL query.
+    - date (datetime): Reference date for query period.
+    - period (str): Time period for data extraction ('day', 'month', 'year').
+    - batch_size (int, optional): Records per batch; all data if None.
+    - offset (int, optional): Dataset start offset for query.
+
+    Retrieves sales data for specified periods, useful for large dataset
+    chunks.
+    '''
     duplicates_select = f'''
         SELECT SALESORDERNUMBER FROM {table_name}
         GROUP BY LINENUM, RETAILVARIANTID, SALESORDERNUMBER,
@@ -214,6 +229,21 @@ def process_data(df):
 def get_massive_byod_salesline(
         start_date, end_date, period='day', batch_size=100000
         ):
+    '''
+    Processes and loads large sales data volumes from an external source to
+    Snowflake in defined batches.
+
+    Parameters:
+    - start_date (datetime): Start date for data processing range.
+    - end_date (datetime): End date for data processing range.
+    - period (str): Time period for data extraction ('day', 'month', 'year').
+    - batch_size (int, optional): Records per batch.
+        If None, processes all data.
+
+    Iterates over date range, extracts, processes, and loads data into
+    Snowflake. If batch_size is specified, processes data in those
+    batch sizes.
+    '''
     conn = pymssql.connect(
         BYOD_SERVER, BYOD_USERNAME, BYOD_PASSWORD, BYOD_DATABASE
     )
@@ -430,6 +460,17 @@ def check_duplicates_sql(cursor, table_name, primary_key):
 
 
 def run_get_byod_salesline(**context):
+    '''
+    Executes the Airflow task, setting start and end dates for data extraction
+    and calling `get_massive_byod_salesline`.
+
+    Start date is three days before the current date, end date is current date.
+
+    Parameters:
+    - context (dict): Execution context with metadata and settings for DAG run.
+
+    No return value. Executes data extraction and loads results into Snowflake.
+    '''
     # start_date = datetime(2021, 10, 5)
     # end_date = datetime(2021, 10, 6)
     execution_date = context['execution_date']
