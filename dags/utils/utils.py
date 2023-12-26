@@ -45,6 +45,10 @@ def write_data_to_snowflake(
     conn = hook.get_conn()
     cursor = conn.cursor()
 
+    if df is None or df.empty:
+        print('[Snowflake] Writing aborted beacause empty dataframe')
+        return
+
     try:
         # Create Temporary Table
         create_snowflake_temporary_table(
