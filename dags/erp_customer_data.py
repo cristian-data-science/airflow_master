@@ -104,6 +104,9 @@ def write_data_to_snowflake(
     The write_pandas method from snowflake-connector-python is used to
     write the DataFrame.
     '''
+    if df is None or df.empty:
+        print('[Snowflake] Writing aborted beacause empty dataframe')
+        return
     # Use the SnowflakeHook to get a connection object
     hook = SnowflakeHook(snowflake_conn_id=default_args['snowflake_conn_id'])
     conn = hook.get_conn()
