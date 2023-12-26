@@ -9,7 +9,7 @@ default_args = {
     'phone': 0,
     'email_on_failure': True,
     'email_on_retry': False,
-    'retries': 1,
+    'retries': 0,
     'retry_delay': timedelta(minutes=60),
     'snowflake_conn_id': 'patagonia_snowflake_connection',
     'byod_erp_customer_table_name': 'CustCustomerV3Staging',
