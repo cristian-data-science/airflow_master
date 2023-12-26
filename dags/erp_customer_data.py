@@ -46,7 +46,12 @@ def get_byod_customers(days=0):
             CAST(DATEADD(DAY, -{days}, GETDATE()) AS DATE)
             AND CAST(GETDATE() AS DATE)'''
     cursor.execute(query)
-    df_byod_customers = pd.DataFrame(cursor.fetchall())
+    result = cursor.fetchall()
+    if not result:
+        return None
+    df_byod_customers = pd.DataFrame(result)
+    if df_byod_customers.empty:
+        return df_byod_customers
     df_byod_customers['SYNCSTARTDATETIME'] = \
         df_byod_customers['SYNCSTARTDATETIME'].dt.strftime('%Y-%m-%d %H:%M:%S')
     df_byod_customers['ADDRESSVALIDFROM'] = \
