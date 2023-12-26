@@ -31,7 +31,7 @@ dag = DAG(
 
 # Tasks functions
 def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
-    """
+    '''
     Fetches customer data from Shopify API with pagination support and filters
     based on the last updated date.
 
@@ -54,13 +54,13 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
 
     Raises:
     - HTTPError: If API request fails.
-    """
+    '''
     customers = []
-    params = {"limit": batch_limit}
+    params = {'limit': batch_limit}
     if days:
-        params["updated_at_min"] = \
+        params['updated_at_min'] = \
             (datetime.now() - timedelta(days=days)).isoformat()
-    url = urljoin(SHOPIFY_API_URL, "customers.json")
+    url = urljoin(SHOPIFY_API_URL, 'customers.json')
 
     while url:
         # Make a GET request to the Shopify API using the provided URL.
@@ -75,8 +75,8 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
         response.raise_for_status()
 
         # Append the fetched customers to the customers list. The response is
-        # expected to be in JSON format with a key "customers".
-        customers.extend(response.json()["customers"])
+        # expected to be in JSON format with a key 'customers'.
+        customers.extend(response.json()['customers'])
 
         # If a response limit is set and the number of fetched customers
         # reaches or exceeds this limit, break out of the loop.
@@ -85,11 +85,11 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
 
         # Extracts the 'Link' header from the response headers. This header
         # contains URLs for pagination (next page, previous page).
-        link_header = response.headers.get("Link")
+        link_header = response.headers.get('Link')
 
         if link_header:
             # Split the Link header to extract individual links.
-            links = link_header.split(", ")
+            links = link_header.split(', ')
 
             # Reset URL to ensure fresh assignment from the Link header.
             url = None
@@ -98,7 +98,7 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
                 # Check for the presence of a 'next' relation type in the Link.
                 if 'rel="next"' in link:
                     # Extract the URL for the next page of results.
-                    url = link[link.index("<")+1:link.index(">")]
+                    url = link[link.index('<')+1:link.index('>')]
 
                     # Clear the params for the next request, as the 'next' URL
                     # already contains the required parameters.
@@ -113,7 +113,7 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
 
 
 def customers_to_dataframe(customers_datalist):
-    """
+    '''
     Converts a list of customer data into a Pandas DataFrame.
 
     This function is useful for transforming data retrieved from an API
@@ -132,7 +132,7 @@ def customers_to_dataframe(customers_datalist):
     renames the columns to match the specified column names, and reorders
     the columns according to a predefined order. It prints the first few
     rows of the DataFrame for review and returns the processed DataFrame.
-    """
+    '''
     if customers_datalist is not None:
         df = pd.DataFrame(customers_datalist)
         df = df.rename(columns={
@@ -172,11 +172,12 @@ def customers_to_dataframe(customers_datalist):
         print(df.shape)
         return df
     else:
-        print("No data received from get_shopify_customers")
+        print('No data received from get_shopify_customers')
+        return None
 
 
 def run_get_shopify_customers():
-    """
+    '''
     A wrapper function that chains fetching customer data from Shopify,
     transforming it into a DataFrame, and subsequently writing it into
     Snowflake.
@@ -185,7 +186,7 @@ def run_get_shopify_customers():
     from Shopify, transforms the fetched data into a DataFrame using
     `customers_to_dataframe`, and writes the DataFrame to Snowflake
     using the `write_data_to_snowflake` function.
-    """
+    '''
     customers_datalist = \
         get_shopify_customers(batch_limit=200, response_limit=None, days=3)
     customers_dataframe = \
