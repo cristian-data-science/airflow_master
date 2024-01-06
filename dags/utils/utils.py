@@ -157,3 +157,27 @@ def check_duplicates_sql(cursor, table_name, primary_key):
     except Exception as e:
         cursor.execute('ROLLBACK')
         print('ROLLBACK executed due to an error:', e)
+
+
+def fetch_data_from_snowflake(
+        table_name, target_column, compare_column,
+        start_date, end_date, snowflake_conn):
+    # Use the SnowflakeHook to get a connection object
+    hook = SnowflakeHook(snowflake_conn_id=snowflake_conn)
+    conn = hook.get_conn()
+    cursor = conn.cursor()
+
+    query = f'''
+    SELECT {target_column}
+    FROM {table_name}
+    WHERE DATE({compare_column}) >= '{start_date}'
+    AND DATE({compare_column}) <= '{end_date}'
+    '''
+    # Executing the query
+    ids_data_list = []
+    cursor.execute(query)
+    for row in cursor:
+        ids_data_list.append(row[0])
+
+    cursor.close()
+    return ids_data_list
