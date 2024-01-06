@@ -34,5 +34,24 @@ default_args = {
         ('TOTAL_SPENT', 'FLOAT'),
         ('UPDATED_AT', 'TIMESTAMP_NTZ'),
         ('VERIFIED_EMAIL', 'BOOLEAN')
+    ],
+    'snowflake_shopify_customer_addresses_table_columns': [
+        ('SHOPIFY_ID', 'BIGINT'),
+        ('CUSTOMER_ID', 'BIGINT'),
+        ('FIRST_NAME', 'VARCHAR(255)'),
+        ('LAST_NAME', 'VARCHAR(255)'),
+        ('COMPANY', 'VARCHAR(255)'),
+        ('ADDRESS1', 'VARCHAR(255)'),
+        ('ADDRESS2', 'VARCHAR(255)'),
+        ('CITY', 'VARCHAR(255)'),
+        ('PROVINCE', 'VARCHAR(255)'),
+        ('COUNTRY', 'VARCHAR(255)'),
+        ('ZIP', 'VARCHAR(255)'),
+        ('PHONE', 'VARCHAR(255)'),
+        ('NAME', 'VARCHAR(255)'),
+        ('PROVINCE_CODE', 'VARCHAR(255)'),
+        ('COUNTRY_CODE', 'VARCHAR(255)'),
+        ('COUNTRY_NAME', 'VARCHAR(255)'),
+        ('DEFAULT', 'BOOLEAN')
     ]
 }

@@ -3,7 +3,7 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
 from dags.config.shopify_customer_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from dags.utils.utils import write_data_to_snowflake, fetch_data_from_snowflake
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os
@@ -207,9 +207,93 @@ def run_get_shopify_customers(**context):
     )
 
 
+def get_shopify_customer_addresses(customer_ids):
+    addresses = []
+    for index, customer_id in enumerate(customer_ids, start=1):
+        print(f'[Shopify] Get addresses for customer '
+              f'{index} - ID: {customer_id}')
+        url = urljoin(
+            SHOPIFY_API_URL,
+            f'customers/{customer_id}/addresses.json'
+            )
+        response = requests.get(
+            url,
+            auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
+        )
+        response.raise_for_status()
+        customer_addresses = response.json().get('addresses', [])
+        addresses.extend([
+            address for address in customer_addresses
+        ])
+    return addresses
+
+
+def addresses_to_dataframe(addresses_datalist):
+    if addresses_datalist is not None:
+        df = pd.DataFrame(addresses_datalist)
+        df = df.rename(columns={
+            'id': 'SHOPIFY_ID',
+            'customer_id': 'CUSTOMER_ID',
+            'first_name': 'FIRST_NAME',
+            'last_name': 'LAST_NAME',
+            'company': 'COMPANY',
+            'address1': 'ADDRESS1',
+            'address2': 'ADDRESS2',
+            'city': 'CITY',
+            'province': 'PROVINCE',
+            'country': 'COUNTRY',
+            'zip': 'ZIP',
+            'phone': 'PHONE',
+            'name': 'NAME',
+            'province_code': 'PROVINCE_CODE',
+            'country_code': 'COUNTRY_CODE',
+            'country_name': 'COUNTRY_NAME',
+            'default': 'DEFAULT'
+        })
+        print(df.head().to_string())
+        print(f'Creating/updating {len(addresses_datalist)} '
+              'customers addresses from Shopify.')
+        print(df.shape)
+        return df
+    else:
+        print('No data received from get_shopify_customer_addresses')
+        return None
+
+
+def run_get_shopify_customer_addresses(start_date=None, end_date=None):
+    end_date = date.today()
+    start_date = end_date - timedelta(days=0)
+    customer_ids = fetch_data_from_snowflake(
+        'SHOPIFY_CUSTOMERS', 'SHOPIFY_ID', 'UPDATED_AT',
+        start_date, end_date, SNOWFLAKE_CONN_ID
+    )
+    print(f'[Snowflake] Modified customers between {start_date} '
+          f'anf {end_date}: {len(customer_ids)}')
+    addresses = get_shopify_customer_addresses(customer_ids)
+    addresses_df = addresses_to_dataframe(addresses)
+
+    write_data_to_snowflake(
+        addresses_df,
+        'SHOPIFY_CUSTOMER_ADDRESSES',
+        default_args['snowflake_shopify_customer_addresses_table_columns'],
+        'SHOPIFY_ID',
+        'TEMP_SHOPIFY_CUSTOMER_ADDRESSES',
+        SNOWFLAKE_CONN_ID
+    )
+
+
 # Task definitions
 task_1 = PythonOperator(
     task_id='get_shopify_customers',
     python_callable=run_get_shopify_customers,
     dag=dag,
 )
+
+# Task definitions
+task_2 = PythonOperator(
+    task_id='get_shopify_customer_addresses',
+    python_callable=run_get_shopify_customer_addresses,
+    dag=dag,
+)
+
+task_1 >> task_2
