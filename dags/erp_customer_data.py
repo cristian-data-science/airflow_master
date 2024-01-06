@@ -29,6 +29,25 @@ dag = DAG(
 
 # Tasks functions
 def get_byod_customers(days=0):
+    '''
+    Retrieves BYOD customer data for a specified number of days.
+
+    Connects to a database using provided credentials and retrieves customer
+    data from a defined table and columns, filtered based on the
+    SYNCSTARTDATETIME to get records from 'days' ago to today. Converts the
+    result into a pandas DataFrame.
+
+    Parameters:
+    days (int): Number of days to look back from today. Default is 0 (today).
+
+    Returns:
+    pd.DataFrame: DataFrame with customer data. Empty if no data found,
+                  None if no query result.
+
+    Note
+    Uses global variables for database settings and table/column names.
+    Ensure these are correctly set.
+    '''
     conn = pymssql.connect(
         BYOD_SERVER, BYOD_USERNAME, BYOD_PASSWORD, BYOD_DATABASE
     )
