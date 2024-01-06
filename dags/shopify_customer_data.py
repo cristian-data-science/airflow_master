@@ -1,4 +1,4 @@
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
@@ -55,6 +55,10 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
     Raises:
     - HTTPError: If API request fails.
     '''
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    print(f'[Start execution] Get Shopify customers '
+          f'from {start_date} to {today}')
     customers = []
     params = {'limit': batch_limit}
     if days:
@@ -176,7 +180,7 @@ def customers_to_dataframe(customers_datalist):
         return None
 
 
-def run_get_shopify_customers():
+def run_get_shopify_customers(**context):
     '''
     A wrapper function that chains fetching customer data from Shopify,
     transforming it into a DataFrame, and subsequently writing it into
@@ -187,6 +191,8 @@ def run_get_shopify_customers():
     `customers_to_dataframe`, and writes the DataFrame to Snowflake
     using the `write_data_to_snowflake` function.
     '''
+    execution_date = context['execution_date']
+    print(f'Execution Date: {execution_date}')
     customers_datalist = \
         get_shopify_customers(batch_limit=200, response_limit=None, days=3)
     customers_dataframe = \

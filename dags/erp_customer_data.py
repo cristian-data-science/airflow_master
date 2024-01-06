@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import timedelta, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
@@ -48,6 +48,10 @@ def get_byod_customers(days=0):
     Uses global variables for database settings and table/column names.
     Ensure these are correctly set.
     '''
+
+    today = date.today()
+    start_date = today - timedelta(days=days)
+    print(f'[Start execution] Get byod customers from {start_date} to {today}')
     conn = pymssql.connect(
         BYOD_SERVER, BYOD_USERNAME, BYOD_PASSWORD, BYOD_DATABASE
     )
@@ -241,7 +245,9 @@ def check_duplicates_sql(cursor, table_name, primary_key):
         print('ROLLBACK executed due to an error:', e)
 
 
-def run_get_byod_customers():
+def run_get_byod_customers(**context):
+    execution_date = context['execution_date']
+    print(f'Execution Date: {execution_date}')
     df_byod_customers = get_byod_customers(days=3)
     write_data_to_snowflake(
         df_byod_customers,

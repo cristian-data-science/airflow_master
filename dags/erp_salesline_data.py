@@ -163,6 +163,8 @@ def get_massive_byod_salesline(
     Snowflake. If batch_size is specified, processes data in those
     batch sizes.
     '''
+    print(f'[Start execution] Get erp salesline '
+          f'from {start_date} to {end_date} by {period}')
     conn = pymssql.connect(
         BYOD_SERVER, BYOD_USERNAME, BYOD_PASSWORD, BYOD_DATABASE
     )
@@ -390,15 +392,13 @@ def run_get_byod_salesline(**context):
 
     No return value. Executes data extraction and loads results into Snowflake.
     '''
-    # start_date = datetime(2021, 10, 5)
-    # end_date = datetime(2021, 10, 6)
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
 
     end_date = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    start_date = end_date - timedelta(days=0)
+    start_date = end_date - timedelta(days=3)
 
     get_massive_byod_salesline(
         start_date, end_date, period='day', batch_size=None
