@@ -262,7 +262,7 @@ def addresses_to_dataframe(addresses_datalist):
 
 def run_get_shopify_customer_addresses(start_date=None, end_date=None):
     end_date = date.today()
-    start_date = end_date - timedelta(days=0)
+    start_date = end_date - timedelta(days=3)
     customer_ids = fetch_data_from_snowflake(
         'SHOPIFY_CUSTOMERS', 'SHOPIFY_ID', 'UPDATED_AT',
         start_date, end_date, SNOWFLAKE_CONN_ID
