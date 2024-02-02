@@ -23,7 +23,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract customer data from ERP and '
     'consolidate it in a single table in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='0 5 * * *',
 )
 
 
@@ -248,7 +248,7 @@ def check_duplicates_sql(cursor, table_name, primary_key):
 def run_get_byod_customers(**context):
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
-    df_byod_customers = get_byod_customers(days=3)
+    df_byod_customers = get_byod_customers(days=30)
     write_data_to_snowflake(
         df_byod_customers,
         'ERP_CUSTOMERS',
