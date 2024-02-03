@@ -30,7 +30,7 @@ dag = DAG(
 # Tasks functions
 def get_salesline_for_period(
         cursor, table_name, columns, date, period,
-        batch_size=None, offset=None
+        batch_size=None, offset=None, exclude_duplicates=False
         ):
     '''
     Retrieves sales data for a specific period from an external data source.
@@ -47,13 +47,6 @@ def get_salesline_for_period(
     Retrieves sales data for specified periods, useful for large dataset
     chunks.
     '''
-    duplicates_select = f'''
-        SELECT SALESID FROM {table_name}
-        GROUP BY LINENUM, SALESID, EXTERNALITEMID, ITEMID, CONFIGID,
-            INVENTCOLORID, INVENTSIZEID, INVENTSTYLEID, INVENTSTATUSID,
-            INVENTLOCATIONID, QTY
-        HAVING COUNT(*) > 1'''
-
     if period == 'day':
         date_filter =  \
             f"CAST(SYNCSTARTDATETIME AS DATE) = '{date.strftime('%Y-%m-%d')}'"
@@ -67,10 +60,19 @@ def get_salesline_for_period(
     query = f'''
     SELECT {columns} FROM {table_name}
     WHERE {date_filter}
-    AND SALESID NOT IN (
-        {duplicates_select}
-    )
     '''
+    if exclude_duplicates:
+        duplicates_select = f'''
+        SELECT SALESID FROM {table_name}
+        GROUP BY LINENUM, INVENTTRANSID, INVENTDIMID, REFCUSTINVOICETRANSRECID,
+                INVOICEID, SALESID, EXTERNALITEMID, DEV_SALESID, ITEMID,
+                CONFIGID, INVENTCOLORID, INVENTSIZEID, INVENTSTYLEID,
+                INVENTSTATUSID, INVENTLOCATIONID, QTY
+        HAVING COUNT(*) > 1'''
+        query += f'''
+                AND SALESID NOT IN (
+                    {duplicates_select}
+                )'''
     if (batch_size and offset) is not None:
         query += f''' ORDER BY SALESID
                 OFFSET {offset} ROWS
