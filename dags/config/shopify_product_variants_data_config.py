@@ -1,0 +1,46 @@
+from datetime import timedelta, datetime
+
+# Default variables
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 2, 3, 5, 0),
+    'email': ['enrique.urrutia@patagonia.com'],
+    'phone': 0,
+    'email_on_failure': True,
+    'email_on_retry': False,
+    'retries': 1,
+    'retry_delay': timedelta(minutes=60),
+    'snowflake_shopify_product_variants_table_columns': [
+        ('PRODUCT_ID', 'BIGINT'),
+        ('VARIANT_ID', 'BIGINT'),
+        ('PRODUCT_TITLE', 'VARCHAR'),
+        ('PRODUCT_BODY_HTML', 'VARCHAR'),
+        ('PRODUCT_VENDOR', 'VARCHAR'),
+        ('PRODUCT_TYPE', 'VARCHAR'),
+        ('PRODUCT_CREATED_AT', 'TIMESTAMP'),
+        ('PRODUCT_HANDLE', 'VARCHAR'),
+        ('PRODUCT_UPDATED_AT', 'TIMESTAMP'),
+        ('PRODUCT_PUBLISHED_AT', 'TIMESTAMP'),
+        ('PRODUCT_PUBLISHED_SCOPE', 'VARCHAR'),
+        ('PRODUCT_TAGS', 'VARCHAR'),
+        ('PRODUCT_STATUS', 'VARCHAR'),
+        ('VARIANT_TITLE', 'VARCHAR'),
+        ('VARIANT_SKU', 'VARCHAR'),
+        ('VARIANT_PRICE', 'FLOAT'),
+        ('VARIANT_COMPARE_AT_PRICE', 'FLOAT'),
+        ('VARIANT_INVENTORY_QUANTITY', 'INTEGER'),
+        ('VARIANT_INVENTORY_POLICY', 'VARCHAR'),
+        ('VARIANT_INVENTORY_MANAGEMENT', 'VARCHAR'),
+        ('VARIANT_OPTION1', 'VARCHAR'),
+        ('VARIANT_OPTION2', 'VARCHAR'),
+        ('VARIANT_OPTION3', 'VARCHAR'),
+        ('VARIANT_CREATED_AT', 'TIMESTAMP'),
+        ('VARIANT_UPDATED_AT', 'TIMESTAMP'),
+        ('VARIANT_TAXABLE', 'BOOLEAN'),
+        ('VARIANT_BARCODE', 'VARCHAR'),
+        ('VARIANT_WEIGHT', 'FLOAT'),
+        ('VARIANT_WEIGHT_UNIT', 'VARCHAR'),
+        ('VARIANT_REQUIRES_SHIPPING', 'BOOLEAN')
+    ]
+}
