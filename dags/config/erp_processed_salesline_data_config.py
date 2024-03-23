@@ -4,7 +4,7 @@ from datetime import timedelta, datetime
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2024, 2, 1, 5, 0),
+    'start_date': datetime(2024, 3, 23, 5, 0),
     'email': ['enrique.urrutia@patagonia.com'],
     'phone': 0,
     'email_on_failure': True,
@@ -78,15 +78,28 @@ default_args = {
         ('TENDERTYPENAME', 'VARCHAR(255)'),
         ('CANAL', 'VARCHAR(255)'),
         ('CECO', 'VARCHAR(255)'),
-        ('CANALCODE', 'INT'),
-        ('CECOCODE', 'INT'),
+        ('CANALCODE', 'VARCHAR(255)'),
+        ('CECOCODE', 'VARCHAR(255)'),
         ('EXTERNALITEMID', 'VARCHAR(255)'),
         ('PRICEGROUPLIST', 'VARCHAR(255)'),
-        ('CREATEDTRANSACTIONDATE2', 'TIMESTAMP'),
+        ('CREATEDTRANSACTIONDATE2', 'TIMESTAMP_NTZ'),
         ('DEFAULTDIMENSIONDISPLAYVALUE', 'VARCHAR(255)'),
         ('PARTITION', 'VARCHAR(255)'),
+        ('CUSTACCOUNT', 'VARCHAR(255)'),
+        ('ORGANIZATIONNAME', 'VARCHAR(255)'),
+        ('INVENTORYLOTID', 'VARCHAR(255)'),
+        ('TRANSACTIONID', 'VARCHAR(255)'),
+        ('RETURNTRANSACTIONID', 'VARCHAR(255)'),
+        ('SKU', 'VARCHAR(255)'),
+        ('LINECREATIONSEQUENCENUMBER', 'FLOAT'),
+        ('SHIPPINGWAREHOUSEID', 'VARCHAR(255)'),
+        ('PRIMARYCONTACTEMAIL', 'VARCHAR(255)'),
+        ('INVOICECODE', 'VARCHAR(255)'),
+        ('ITEMIDSCANNED', 'VARCHAR(255)'),
+        ('KEYBOARDITEMENTRY', 'INT'),
+        ('PRICECHANGE', 'INT'),
         ('DATAAREAID', 'VARCHAR(255)'),
-        ('SYNCSTARTDATETIME', 'TIMESTAMP')
+        ('SYNCSTARTDATETIME', 'TIMESTAMP_NTZ')
     ]
 
 }

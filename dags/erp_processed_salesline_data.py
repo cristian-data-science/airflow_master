@@ -107,12 +107,6 @@ def process_data(df):
     df['INVOICEDATE'] = df['INVOICEDATE'].dt.strftime('%Y-%m-%d')
     df['LINENUM'] = df['LINENUM'].fillna(0).astype(int)
     df['QTY'] = df['QTY'].fillna(0).astype(int)
-    df['CANALCODE'] = \
-        pd.to_numeric(
-            df['CANALCODE'], errors='coerce').fillna(0).astype(int)
-    df['CECOCODE'] = \
-        pd.to_numeric(
-            df['CECOCODE'], errors='coerce').fillna(0).astype(int)
     df['TENDERTYPEID'] = \
         pd.to_numeric(
             df['TENDERTYPEID'], errors='coerce').fillna(0).astype(int)

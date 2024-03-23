@@ -101,6 +101,7 @@ def write_data_to_snowflake(
         if duplicates:
             cursor.execute('ROLLBACK')
             print(f'There are duplicates: {duplicates}. ROLLBACK executed.')
+            raise ValueError(f'Duplicates found in {table_name}.')
         else:
             cursor.execute('COMMIT')
             cursor.execute(f'''SELECT COUNT(*) FROM {table_name}
