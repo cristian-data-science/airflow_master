@@ -3,11 +3,12 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
 from dags.config.shopify_customer_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake, fetch_data_from_snowflake
+from dags.utils.utils import write_data_to_snowflake
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os
 import requests
+import time
 import pandas as pd
 
 
@@ -30,7 +31,9 @@ dag = DAG(
 
 
 # Tasks functions
-def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
+def get_shopify_customers(
+        batch_limit=250, response_limit=None, days=1, batch_size=10000
+        ):
     '''
     Fetches customer data from Shopify API with pagination support and filters
     based on the last updated date.
@@ -56,61 +59,56 @@ def get_shopify_customers(batch_limit=250, response_limit=None, days=1):
     - HTTPError: If API request fails.
     '''
     today = date.today()
-    start_date = today - timedelta(days=days)
-    print(f'[Start execution] Get Shopify customers '
-          f'from {start_date} to {today}')
     customers = []
     params = {'limit': batch_limit}
     if days:
+        start_date = today - timedelta(days=days)
+        print('[Start execution] Get Shopify customers '
+              f'from {start_date} to {today}')
         params['updated_at_min'] = \
             (datetime.now() - timedelta(days=days)).isoformat()
+    else:
+        print('[Start execution] Get Shopify customers all dates')
     url = urljoin(SHOPIFY_API_URL, 'customers.json')
 
+    requests_count = 0
     while url:
-        # Make a GET request to the Shopify API using the provided URL.
-        # The request includes parameters for pagination and authentication.
+        print(f'Requests count: {requests_count}')
+        'Shopify API Limitations'
+        time.sleep(1) if requests_count % 20 == 0 else 0
         response = requests.get(
             url,
             params=params,
             auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
         )
+        requests_count += 1
 
-        # Raises an HTTPError if the request returned an error status code.
+        'Raises an HTTPError if the request returned an error status code'
         response.raise_for_status()
-
-        # Append the fetched customers to the customers list. The response is
-        # expected to be in JSON format with a key 'customers'.
         customers.extend(response.json()['customers'])
+        if len(customers) >= batch_size:
+            print(f'To process {len(customers)} customers')
+            process_customers(customers)
+            customers = []
 
-        # If a response limit is set and the number of fetched customers
-        # reaches or exceeds this limit, break out of the loop.
         if response_limit and len(customers) >= response_limit:
             break
 
-        # Extracts the 'Link' header from the response headers. This header
-        # contains URLs for pagination (next page, previous page).
+        '''Extracts the 'Link' header from the response headers. This header
+        contains URLs for pagination (next page, previous page).'''
         link_header = response.headers.get('Link')
 
         if link_header:
-            # Split the Link header to extract individual links.
             links = link_header.split(', ')
 
-            # Reset URL to ensure fresh assignment from the Link header.
             url = None
-
             for link in links:
-                # Check for the presence of a 'next' relation type in the Link.
                 if 'rel="next"' in link:
-                    # Extract the URL for the next page of results.
                     url = link[link.index('<')+1:link.index('>')]
-
-                    # Clear the params for the next request, as the 'next' URL
-                    # already contains the required parameters.
                     params = None
                     break
         else:
-            # If there is no 'Link' header in the response, set URL to None to
-            # stop further pagination.
+            process_customers(customers) if customers else 0
             url = None
 
     return customers
@@ -193,16 +191,41 @@ def run_get_shopify_customers(**context):
     '''
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
-    customers_datalist = \
-        get_shopify_customers(batch_limit=200, response_limit=None, days=3)
+    get_shopify_customers(
+        batch_limit=250, response_limit=None, days=3, batch_size=10000
+    )
+
+
+def process_customers(customers_list):
     customers_dataframe = \
-        customers_to_dataframe(customers_datalist)
-    write_data_to_snowflake(
+        customers_to_dataframe(customers_list)
+
+    addresses = get_shopify_customer_addresses(customers_dataframe.SHOPIFY_ID)
+    addresses_df = addresses_to_dataframe(addresses)
+    most_repeated_values_df = get_most_repeated_values_dataframe(addresses_df)
+
+    customers_merged_df = pd.merge(
         customers_dataframe,
+        most_repeated_values_df,
+        on="SHOPIFY_ID",
+        how="left"
+    )
+
+    write_data_to_snowflake(
+        customers_merged_df,
         'SHOPIFY_CUSTOMERS',
         default_args['snowflake_shopify_customer_table_columns'],
         'SHOPIFY_ID',
         'TEMP_SHOPIFY_CUSTOMERS',
+        SNOWFLAKE_CONN_ID
+    )
+
+    write_data_to_snowflake(
+        addresses_df,
+        'SHOPIFY_CUSTOMER_ADDRESSES',
+        default_args['snowflake_shopify_customer_addresses_table_columns'],
+        'SHOPIFY_ID',
+        'TEMP_SHOPIFY_CUSTOMER_ADDRESSES',
         SNOWFLAKE_CONN_ID
     )
 
@@ -216,6 +239,8 @@ def get_shopify_customer_addresses(customer_ids):
             SHOPIFY_API_URL,
             f'customers/{customer_id}/addresses.json'
             )
+        'Shopify API Limitations'
+        time.sleep(2) if index % 20 == 0 else 0
         response = requests.get(
             url,
             auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
@@ -260,26 +285,35 @@ def addresses_to_dataframe(addresses_datalist):
         return None
 
 
-def run_get_shopify_customer_addresses(start_date=None, end_date=None):
-    end_date = date.today()
-    start_date = end_date - timedelta(days=0)
-    customer_ids = fetch_data_from_snowflake(
-        'SHOPIFY_CUSTOMERS', 'SHOPIFY_ID', 'UPDATED_AT',
-        start_date, end_date, SNOWFLAKE_CONN_ID
-    )
-    print(f'[Snowflake] Modified customers between {start_date} '
-          f'anf {end_date}: {len(customer_ids)}')
-    addresses = get_shopify_customer_addresses(customer_ids)
-    addresses_df = addresses_to_dataframe(addresses)
-
-    write_data_to_snowflake(
-        addresses_df,
-        'SHOPIFY_CUSTOMER_ADDRESSES',
-        default_args['snowflake_shopify_customer_addresses_table_columns'],
-        'SHOPIFY_ID',
-        'TEMP_SHOPIFY_CUSTOMER_ADDRESSES',
-        SNOWFLAKE_CONN_ID
-    )
+def get_most_repeated_values_dataframe(addresses_df):
+    'Insert most repeat values '
+    if not addresses_df.empty:
+        most_repeated_values = addresses_df.groupby('CUSTOMER_ID').agg({
+            'NAME': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'PHONE': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'ADDRESS1': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'ADDRESS2': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'COMPANY': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'PROVINCE': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+            'CITY': lambda x:
+                x.mode().get(0, None) if not x.empty else None,
+                }).reset_index().rename(columns={
+                    'CUSTOMER_ID': 'SHOPIFY_ID',
+                    'NAME': 'MOST_REPEATED_NAME',
+                    'PHONE': 'MOST_REPEATED_PHONE',
+                    'ADDRESS1': 'MOST_REPEATED_ADDRESS1',
+                    'ADDRESS2': 'MOST_REPEATED_ADDRESS2',
+                    'COMPANY': 'MOST_REPEATED_RUT',
+                    'PROVINCE': 'MOST_REPEATED_PROVINCE',
+                    'CITY': 'MOST_REPEATED_CITY'
+                })
+    return most_repeated_values
 
 
 # Task definitions
@@ -288,12 +322,3 @@ task_1 = PythonOperator(
     python_callable=run_get_shopify_customers,
     dag=dag,
 )
-
-# Task definitions
-task_2 = PythonOperator(
-    task_id='get_shopify_customer_addresses',
-    python_callable=run_get_shopify_customer_addresses,
-    dag=dag,
-)
-
-task_1 >> task_2

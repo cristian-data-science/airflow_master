@@ -33,7 +33,14 @@ default_args = {
         ('TAX_EXEMPT', 'BOOLEAN'),
         ('TOTAL_SPENT', 'FLOAT'),
         ('UPDATED_AT', 'TIMESTAMP_NTZ'),
-        ('VERIFIED_EMAIL', 'BOOLEAN')
+        ('VERIFIED_EMAIL', 'BOOLEAN'),
+        ('MOST_REPEATED_NAME', 'VARCHAR(255)'),
+        ('MOST_REPEATED_PHONE', 'VARCHAR(255)'),
+        ('MOST_REPEATED_ADDRESS1', 'VARCHAR(255)'),
+        ('MOST_REPEATED_ADDRESS2', 'VARCHAR(255)'),
+        ('MOST_REPEATED_RUT', 'VARCHAR(255)'),
+        ('MOST_REPEATED_PROVINCE', 'VARCHAR(255)'),
+        ('MOST_REPEATED_CITY', 'VARCHAR(255)')
     ],
     'snowflake_shopify_customer_addresses_table_columns': [
         ('SHOPIFY_ID', 'BIGINT'),
