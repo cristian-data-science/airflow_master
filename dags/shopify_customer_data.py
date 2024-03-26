@@ -8,6 +8,7 @@ from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os
 import requests
+from requests.exceptions import HTTPError, ConnectionError
 import time
 import pandas as pd
 
@@ -32,7 +33,8 @@ dag = DAG(
 
 # Tasks functions
 def get_shopify_customers(
-        batch_limit=250, response_limit=None, days=1, batch_size=10000
+        batch_limit=250, response_limit=None,
+        days=1, batch_size=10000, max_retries=5
         ):
     '''
     Fetches customer data from Shopify API with pagination support and filters
@@ -73,43 +75,54 @@ def get_shopify_customers(
 
     requests_count = 0
     while url:
-        print(f'Requests count: {requests_count}')
-        'Shopify API Limitations'
-        time.sleep(1) if requests_count % 20 == 0 else 0
-        response = requests.get(
-            url,
-            params=params,
-            auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
-        )
-        requests_count += 1
+        try:
+            print(f'Requests count: {requests_count}')
+            'Shopify API Limitations'
+            time.sleep(1) if requests_count % 20 == 0 else 0
+            response = requests.get(
+                url,
+                params=params,
+                auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
+            )
+            requests_count += 1
 
-        'Raises an HTTPError if the request returned an error status code'
-        response.raise_for_status()
-        customers.extend(response.json()['customers'])
-        if len(customers) >= batch_size:
-            print(f'To process {len(customers)} customers')
-            process_customers(customers)
-            customers = []
+            'Raises an HTTPError if the request returned an error status code'
+            response.raise_for_status()
+            customers.extend(response.json()['customers'])
+            if len(customers) >= batch_size:
+                print(f'To process {len(customers)} customers')
+                process_customers(customers)
+                customers = []
 
-        if response_limit and len(customers) >= response_limit:
-            break
+            if response_limit and len(customers) >= response_limit:
+                break
 
-        '''Extracts the 'Link' header from the response headers. This header
-        contains URLs for pagination (next page, previous page).'''
-        link_header = response.headers.get('Link')
+            '''Extracts the 'Link' header from the response headers. This
+            header contains URLs for pagination (next page, previous page).'''
+            link_header = response.headers.get('Link')
 
-        if link_header:
-            links = link_header.split(', ')
+            if link_header:
+                links = link_header.split(', ')
 
-            url = None
-            for link in links:
-                if 'rel="next"' in link:
-                    url = link[link.index('<')+1:link.index('>')]
-                    params = None
-                    break
-        else:
-            process_customers(customers) if customers else 0
-            url = None
+                url = None
+                for link in links:
+                    if 'rel="next"' in link:
+                        url = link[link.index('<')+1:link.index('>')]
+                        params = None
+                        break
+            else:
+                process_customers(customers) if customers else 0
+                url = None
+        except (HTTPError, ConnectionError) as e:
+            print(f'Error encountered: {e}')
+            max_retries -= 1
+            if max_retries > 0:
+                print('Waiting 2 seconds before retrying...')
+                time.sleep(2)
+                continue
+            else:
+                print('Max retries exceeded.')
+                break
 
     return customers
 
@@ -230,26 +243,39 @@ def process_customers(customers_list):
     )
 
 
-def get_shopify_customer_addresses(customer_ids):
+def get_shopify_customer_addresses(
+        customer_ids, max_retries=5, backoff_factor=2
+        ):
     addresses = []
     for index, customer_id in enumerate(customer_ids, start=1):
-        print(f'[Shopify] Get addresses for customer '
-              f'{index} - ID: {customer_id}')
-        url = urljoin(
-            SHOPIFY_API_URL,
-            f'customers/{customer_id}/addresses.json'
-            )
-        'Shopify API Limitations'
-        time.sleep(2) if index % 20 == 0 else 0
-        response = requests.get(
-            url,
-            auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
-        )
-        response.raise_for_status()
-        customer_addresses = response.json().get('addresses', [])
-        addresses.extend([
-            address for address in customer_addresses
-        ])
+        retry_attempts = 0
+        while retry_attempts < max_retries:
+            try:
+                print(f'[Shopify] Get addresses for customer '
+                      f'{index} - ID: {customer_id}')
+                url = urljoin(
+                    SHOPIFY_API_URL,
+                    f'customers/{customer_id}/addresses.json'
+                    )
+                'Shopify API Limitations'
+                time.sleep(2) if index % 18 == 0 else 0
+                response = requests.get(
+                    url,
+                    auth=HTTPBasicAuth(SHOPIFY_API_KEY, SHOPIFY_API_PASSWORD)
+                )
+                response.raise_for_status()
+                customer_addresses = response.json().get('addresses', [])
+                addresses.extend([
+                    address for address in customer_addresses
+                ])
+                break
+            except (HTTPError, ConnectionError):
+                retry_attempts += 1
+                sleep_time = backoff_factor ** retry_attempts
+                print('Error: Service unavailable, '
+                      f'retrying in {sleep_time} seconds...'
+                      f' Retry numbre: {retry_attempts}')
+                time.sleep(sleep_time)
     return addresses
 
 
