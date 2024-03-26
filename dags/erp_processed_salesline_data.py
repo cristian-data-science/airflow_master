@@ -2,6 +2,7 @@ from datetime import timedelta, datetime
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from snowflake.connector.pandas_tools import write_pandas
 from dotenv import load_dotenv
 from dags.config.erp_processed_salesline_data_config import default_args
@@ -16,6 +17,11 @@ BYOD_SERVER = os.getenv('BYOD_SERVER')
 BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
+
+DAYS = 3
+PERIOD = 'day'
+BATCH_SIZE = 10000
+
 
 # Dag definition
 dag = DAG(
@@ -394,10 +400,82 @@ def run_get_byod_processed_salesline(**context):
     end_date = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
-    start_date = end_date - timedelta(days=3)
+    start_date = end_date - timedelta(days=DAYS)
 
     get_massive_byod_processed_salesline(
-        start_date, end_date, period='day', batch_size=50000
+        start_date, end_date, period=PERIOD, batch_size=BATCH_SIZE
+    )
+
+
+def process_sales_orders(start_date, end_date):
+    '''
+    Updates the ERP_PROCESSED_SALES table with aggregated order data from
+    ERP_PROCESSED_SALESLINE table within the specified date range.
+
+    Parameters:
+    - start_date (datetime): Start date for the data processing range.
+    - end_date (datetime): End date for the data processing range.
+    '''
+
+    sql_query = f"""
+    MERGE INTO ERP_PROCESSED_SALES target
+    USING (
+        SELECT
+            SALESID,
+            MAX(INVOICEDATE) AS InvoiceDate,
+            MAX(CREATEDTRANSACTIONDATE2) AS CreatedTransaction,
+            MAX(INVOICEID) AS InvoiceID,
+            MAX(CUSTACCOUNT) AS CustomerAccount,
+            MAX(ORGANIZATIONNAME) AS OrganizationName,
+            SUM(SALESPRICE) AS SalesPriceTotal,
+            SUM(QTY) AS QtyTotal,
+            MAX(CURRENCYCODE) AS CurrencyCode,
+            MAX(CANAL) AS Canal,
+            MAX(CECO) AS Ceco,
+            MAX(TAXGROUP) AS TaxGroup,
+            MAX(PURCHORDERFORMNUM) AS OrderNumber
+        FROM ERP_PROCESSED_SALESLINE
+        WHERE SNOWFLAKE_UPDATED_AT
+            BETWEEN '{start_date.strftime("%Y-%m-%d")}' AND
+            '{end_date.strftime("%Y-%m-%d")}'
+        GROUP BY SALESID
+    ) AS source
+    ON target.SALESID = source.SALESID
+    WHEN MATCHED THEN
+        UPDATE SET
+            InvoiceDate = source.InvoiceDate,
+            CreatedTransaction = source.CreatedTransaction,
+            InvoiceID = source.InvoiceID,
+            CustomerAccount = source.CustomerAccount,
+            OrganizationName = source.OrganizationName,
+            SalesPriceTotal = source.SalesPriceTotal,
+            QtyTotal = source.QtyTotal,
+            CurrencyCode = source.CurrencyCode,
+            Canal = source.Canal,
+            Ceco = source.Ceco,
+            TaxGroup = source.TaxGroup,
+            OrderNumber = source.OrderNumber
+    WHEN NOT MATCHED THEN
+        INSERT (
+            SALESID, InvoiceDate, CreatedTransaction, InvoiceID,
+            CustomerAccount, OrganizationName, SalesPriceTotal,
+            QtyTotal, CurrencyCode, Canal, Ceco, TaxGroup, OrderNumber
+        )
+        VALUES (
+            source.SALESID, source.InvoiceDate, source.CreatedTransaction,
+            source.InvoiceID, source.CustomerAccount,
+            source.OrganizationName, source.SalesPriceTotal, source.QtyTotal,
+            source.CurrencyCode, source.Canal, source.Ceco, source.TaxGroup,
+            source.OrderNumber
+        );
+    """
+
+    return SnowflakeOperator(
+        task_id='process_sales_orders',
+        sql=sql_query,
+        snowflake_conn_id='patagonia_snowflake_connection',
+        autocommit=True,
+        dag=dag
     )
 
 
@@ -407,3 +485,14 @@ task_1 = PythonOperator(
     python_callable=run_get_byod_processed_salesline,
     dag=dag,
 )
+
+end_date = datetime.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+start_date = end_date - timedelta(days=DAYS)
+task_2 = process_sales_orders(
+    start_date, end_date
+)
+
+
+task_1 >> task_2
