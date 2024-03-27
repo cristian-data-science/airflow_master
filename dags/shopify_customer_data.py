@@ -98,6 +98,7 @@ def get_shopify_customers(
                 print('Response limit')
                 print(f'Processing the last batch of {len(customers)} customers')
                 process_customers(customers) if customers else 0
+                customers = []
                 break
 
             '''Extracts the 'Link' header from the response headers. This
@@ -117,6 +118,7 @@ def get_shopify_customers(
                 print('No more link header')
                 print(f'Processing the last batch of {len(customers)} customers')
                 process_customers(customers) if customers else 0
+                customers = []
                 url = None
         except (HTTPError, ConnectionError) as e:
             print(f'Error encountered: {e}')
