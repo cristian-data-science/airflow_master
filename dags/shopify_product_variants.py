@@ -131,6 +131,8 @@ def variants_to_dataframe(products_list):
                 'VARIANT_PRICE': variant['price'],
                 'VARIANT_COMPARE_AT_PRICE': variant.get(
                     'compare_at_price', None),
+                'VARIANT_INVENTORY_ITEM_ID': variant.get(
+                    'inventory_item_id', None),
                 'VARIANT_INVENTORY_QUANTITY': variant.get(
                     'inventory_quantity', None),
                 'VARIANT_INVENTORY_POLICY': variant[
