@@ -96,7 +96,8 @@ def get_shopify_customers(
 
             if response_limit and len(customers) >= response_limit:
                 print('Response limit')
-                print(f'Processing the last batch of {len(customers)} customers')
+                print(f'Processing the last batch of {len(customers)} '
+                      'customers')
                 process_customers(customers) if customers else 0
                 customers = []
                 break
@@ -116,7 +117,8 @@ def get_shopify_customers(
                         break
             else:
                 print('No more link header')
-                print(f'Processing the last batch of {len(customers)} customers')
+                print(f'Processing the last batch of {len(customers)} '
+                      'customers')
                 process_customers(customers) if customers else 0
                 customers = []
                 url = None
