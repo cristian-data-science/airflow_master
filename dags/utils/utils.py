@@ -50,6 +50,9 @@ def write_data_to_snowflake(
         return
 
     try:
+        # Set timezone in Snowflake
+        cursor.execute("ALTER SESSION SET TIMEZONE = 'America/Santiago'")
+
         # Create Temporary Table
         create_snowflake_temporary_table(
             cursor,
