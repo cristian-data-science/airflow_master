@@ -24,11 +24,16 @@ default_args = {
         ('SUBTOTAL_PRICE', 'FLOAT'),  # subtotal_price
         ('UPDATED_AT', 'TIMESTAMP_NTZ'),  # updated_at
         ('CUSTOMER_ID', 'NUMBER'),  # customer.id
-        ('SMS_MARKETING_CONSENT', 'VARCHAR(255)'), # customer.sms_marketing_consent
+        ('SMS_MARKETING_CONSENT', 'VARCHAR(255)'),
+        # customer.sms_marketing_consent
         ('TAGS', 'VARCHAR(255)'),  # customer.tags
-        ('ACCEPTS_MARKETING', 'BOOLEAN'),  # customer.accepts_marketing
-        ('ACCEPTS_MARKETING_UPDATED_AT', 'TIMESTAMP_NTZ'),  # customer.accepts_marketing_updated_at
-        ('MARKETING_OPT_IN_LEVEL', 'VARCHAR(255)'),  # customer.marketing_opt_in_level
-        ('DISCOUNTED_PRICE', 'FLOAT'),  # shipping_lines.discounted_price
+        ('ACCEPTS_MARKETING', 'BOOLEAN'),
+        # customer.accepts_marketing
+        ('ACCEPTS_MARKETING_UPDATED_AT', 'TIMESTAMP_NTZ'),
+        # customer.accepts_marketing_updated_at
+        ('MARKETING_OPT_IN_LEVEL', 'VARCHAR(255)'),
+        # customer.marketing_opt_in_level
+        ('DISCOUNTED_PRICE', 'FLOAT'),
+        # shipping_lines.discounted_price
     ]
 }
