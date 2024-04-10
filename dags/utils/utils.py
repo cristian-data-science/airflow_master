@@ -83,6 +83,24 @@ def write_data_to_snowflake(
         insert_columns_sql = ', '.join(insert_columns)
         insert_values_sql = ', '.join(insert_values)
 
+        # Checking for duplicates in temporary table
+        cursor.execute(f'''
+            SELECT {primary_key}, COUNT(*)
+            FROM {temporary_table_name}
+            GROUP BY {primary_key}
+            HAVING COUNT(*) > 1''')
+        temp_duplicates = cursor.fetchall()
+        if temp_duplicates:
+            duplicate_keys = ', '.join([
+                str(dup[0]) for dup in temp_duplicates])
+            cursor.execute(f'SELECT * FROM {temporary_table_name} '
+                           f'WHERE {primary_key} IN ({duplicate_keys})')
+            duplicate_details = cursor.fetchall()
+            print(f'Duplicates in temporary table: {temp_duplicates}')
+            print(f'Duplicates details: {duplicate_details}')
+            cursor.execute('ROLLBACK')
+            return
+
         # Snowflake Merge execute
         cursor.execute('BEGIN')
         merge_sql = f'''
@@ -102,8 +120,14 @@ def write_data_to_snowflake(
 
         duplicates = check_duplicates_sql(cursor, table_name, primary_key)
         if duplicates:
+            duplicate_keys = ', '.join([str(dup[0]) for dup in duplicates])
+            cursor.execute(f'SELECT * FROM {table_name} '
+                           f'WHERE {primary_key} IN ({duplicate_keys})')
+            duplicate_details = cursor.fetchall()
+
             cursor.execute('ROLLBACK')
             print(f'There are duplicates: {duplicates}. ROLLBACK executed.')
+            print(f'Duplicate details: {duplicate_details}')
             raise ValueError(f'Duplicates found in {table_name}.')
         else:
             cursor.execute('COMMIT')
@@ -127,6 +151,7 @@ def write_data_to_snowflake(
         raise e
     finally:
         cursor.close()
+        conn.close()
 
 
 def check_duplicates_sql(cursor, table_name, primary_key):
@@ -184,4 +209,5 @@ def fetch_data_from_snowflake(
         ids_data_list.append(row[0])
 
     cursor.close()
+    conn.close()
     return ids_data_list

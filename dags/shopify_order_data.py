@@ -159,7 +159,8 @@ def orders_to_dataframe(orders_datalist):
                 'EMAIL': order.get('email') or order.get('contact_email'),
                 'CREATED_AT': order.get('created_at'),
                 'CURRENT_SUBTOTAL_PRICE': order.get('current_subtotal_price'),
-                'CURRENT_TOTAL_DISCOUNTS': order.get('current_total_discounts'),
+                'CURRENT_TOTAL_DISCOUNTS':
+                    order.get('current_total_discounts'),
                 'CURRENT_TOTAL_PRICE': order.get('current_total_price'),
                 'FINANCIAL_STATUS': order.get('financial_status'),
                 'NAME': order.get('name'),
@@ -173,7 +174,7 @@ def orders_to_dataframe(orders_datalist):
                 'ACCEPTS_MARKETING': customer_info.get('accepts_marketing'),
                 'ACCEPTS_MARKETING_UPDATED_AT':
                     customer_info.get('accepts_marketing_updated_at'),
-                'MARKETING_OPT_IN_LEVEL': 
+                'MARKETING_OPT_IN_LEVEL':
                     customer_info.get('marketing_opt_in_level'),
                 'DISCOUNTED_PRICE': order.get(
                     'shipping_lines', [{}])[0].get('discounted_price')
