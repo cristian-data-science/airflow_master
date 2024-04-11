@@ -1,5 +1,7 @@
+from datetime import timedelta, datetime
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from dotenv import load_dotenv
 from dags.config.oms_order_data_config import default_args
 from dags.utils.utils import write_data_to_snowflake
@@ -18,6 +20,8 @@ OMS_API_INSTANCE = os.getenv('OMS_API_INSTANCE')
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 OMS_TOKEN_URL = f'{OMS_API_URL}authentication/oauth2/token'
 OMS_ORDER_URL = f'{OMS_API_URL}{OMS_API_INSTANCE}/powerbi/order'
+
+DAYS = 2
 
 # Dag definition
 dag = DAG(
@@ -215,9 +219,133 @@ def run_get_oms_orders(**context):
     )
 
 
+def process_oms_suborders(start_date, end_date):
+    '''
+    Updates the OMS_SUBORDERS table with aggregated order data from
+    OMS_SUBORDERSLINE table within the specified date range.
+
+    Parameters:
+    - start_date (datetime): Start date for the data processing range.
+    - end_date (datetime): End date for the data processing range.
+    '''
+
+    sql_query = f"""
+    MERGE INTO OMS_SUBORDERS target
+    USING (
+        SELECT
+            SUBORDER_ID,
+            MAX(ORDER_ID) AS ORDER_ID,
+            MAX(DATE_ORDER) AS ORDER_DATE,
+            SUM(AMOUNT_DISCOUNT) AS TOTAL_DISCOUNT,
+            SUM(AMOUNT_TAX) AS TOTAL_TAX,
+            SUM(AMOUNT_TOTAL) AS TOTAL_AMOUNT,
+            SUM(AMOUNT_UNTAXED) AS TOTAL_UNTAXED,
+            MAX(STATE_OPTION_NAME) AS STATE,
+            MAX(DELIVERY_CLIENT_DATE) AS DELIVERY_DATE,
+            MAX(DELIVERY_METHOD_NAME) AS DELIVERY_METHOD,
+            MAX(ECOMMERCE_NAME) AS ECOMMERCE_NAME,
+            MAX(ECOMMERCE_NAME_CHILD) AS ECOMMERCE_NAME_CHILD,
+            MAX(WAREHOUSE) AS WAREHOUSE,
+            COUNT(*) AS NUMBER_OF_ITEMS,
+            SUM(PRODUCT_UOM_QTY) AS NUMBER_OF_PRODUCTS,
+            MAX(CITY_NAME) AS CITY_NAME,
+            MAX(STREET) AS STREET,
+            MAX(PHONE) AS PHONE,
+            MAX(STATE_NAME) AS STATE_NAME,
+            MAX(DISCOUNT) AS DISCOUNT,
+            SUM(PRICE_REDUCE) AS PRICE_REDUCE,
+            SUM(PRICE_TOTAL) AS PRICE_TOTAL,
+            MAX(EMAIL) AS EMAIL,
+            MAX(PARTNER_NAME) AS PARTNER_NAME,
+            MAX(PARTNER_VAT) AS PARTNER_VAT,
+            MAX(PAYMENT_METHOD_NAME) AS PAYMENT_METHOD_NAME,
+            LISTAGG(TRANSFER_WAREHOUSE, ', ')
+                WITHIN GROUP (ORDER BY SUBORDER_ID) AS TRANSFER_WAREHOUSE
+        FROM OMS_SUBORDERSLINE
+        WHERE SNOWFLAKE_UPDATED_AT
+            BETWEEN '{start_date.strftime("%Y-%m-%d")}'
+            AND '{end_date.strftime("%Y-%m-%d")}'
+        GROUP BY SUBORDER_ID
+    ) AS source
+    ON target.SUBORDER_ID = source.SUBORDER_ID
+    WHEN MATCHED THEN
+        UPDATE SET
+            ORDER_ID = source.ORDER_ID,
+            ORDER_DATE = source.ORDER_DATE,
+            TOTAL_DISCOUNT = source.TOTAL_DISCOUNT,
+            TOTAL_TAX = source.TOTAL_TAX,
+            TOTAL_AMOUNT = source.TOTAL_AMOUNT,
+            TOTAL_UNTAXED = source.TOTAL_UNTAXED,
+            STATE = source.STATE,
+            DELIVERY_DATE = source.DELIVERY_DATE,
+            DELIVERY_METHOD = source.DELIVERY_METHOD,
+            ECOMMERCE_NAME = source.ECOMMERCE_NAME,
+            ECOMMERCE_NAME_CHILD = source.ECOMMERCE_NAME_CHILD,
+            WAREHOUSE = source.WAREHOUSE,
+            NUMBER_OF_ITEMS = source.NUMBER_OF_ITEMS,
+            NUMBER_OF_PRODUCTS = source.NUMBER_OF_PRODUCTS,
+            CITY_NAME = source.CITY_NAME,
+            STREET = source.STREET,
+            PHONE = source.PHONE,
+            STATE_NAME = source.STATE_NAME,
+            DISCOUNT = source.DISCOUNT,
+            PRICE_REDUCE = source.PRICE_REDUCE,
+            PRICE_TOTAL = source.PRICE_TOTAL,
+            EMAIL = source.EMAIL,
+            PARTNER_NAME = source.PARTNER_NAME,
+            PARTNER_VAT = source.PARTNER_VAT,
+            PAYMENT_METHOD_NAME = source.PAYMENT_METHOD_NAME,
+            TRANSFER_WAREHOUSE = source.TRANSFER_WAREHOUSE,
+            SNOWFLAKE_UPDATED_AT = CURRENT_TIMESTAMP
+    WHEN NOT MATCHED THEN
+        INSERT (
+            SUBORDER_ID, ORDER_ID, ORDER_DATE, TOTAL_DISCOUNT, TOTAL_TAX,
+            TOTAL_AMOUNT, TOTAL_UNTAXED, STATE, DELIVERY_DATE, DELIVERY_METHOD,
+            ECOMMERCE_NAME, ECOMMERCE_NAME_CHILD, WAREHOUSE, NUMBER_OF_ITEMS,
+            NUMBER_OF_PRODUCTS, CITY_NAME, STREET, PHONE, STATE_NAME, DISCOUNT,
+            PRICE_REDUCE, PRICE_TOTAL, EMAIL, PARTNER_NAME, PARTNER_VAT,
+            PAYMENT_METHOD_NAME, TRANSFER_WAREHOUSE,
+            SNOWFLAKE_CREATED_AT, SNOWFLAKE_UPDATED_AT
+        )
+        VALUES (
+            source.SUBORDER_ID, source.ORDER_ID, source.ORDER_DATE,
+            source.TOTAL_DISCOUNT, source.TOTAL_TAX,
+            source.TOTAL_AMOUNT, source.TOTAL_UNTAXED,
+            source.STATE, source.DELIVERY_DATE, source.DELIVERY_METHOD,
+            source.ECOMMERCE_NAME, source.ECOMMERCE_NAME_CHILD,
+            source.WAREHOUSE, source.NUMBER_OF_ITEMS,
+            source.NUMBER_OF_PRODUCTS, source.CITY_NAME, source.STREET,
+            source.PHONE, source.STATE_NAME, source.DISCOUNT,
+            source.PRICE_REDUCE, source.PRICE_TOTAL, source.EMAIL,
+            source.PARTNER_NAME, source.PARTNER_VAT,
+            source.PAYMENT_METHOD_NAME, source.TRANSFER_WAREHOUSE,
+            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+        );
+    """
+
+    return SnowflakeOperator(
+        task_id='process_oms_sales_orders',
+        sql=sql_query,
+        snowflake_conn_id=SNOWFLAKE_CONN_ID,
+        autocommit=True,
+        dag=dag
+    )
+
+
 # Task definitions
 task_1 = PythonOperator(
     task_id='get_oms_orders',
     python_callable=run_get_oms_orders,
     dag=dag,
 )
+
+end_date = datetime.now().replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+start_date = end_date - timedelta(days=DAYS)
+task_2 = process_oms_suborders(
+    start_date, end_date
+)
+
+
+task_1 >> task_2
