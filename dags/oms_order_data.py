@@ -230,6 +230,7 @@ def process_oms_suborders(start_date, end_date):
     '''
 
     sql_query = f"""
+    ALTER SESSION SET TIMEZONE = 'America/Santiago';
     MERGE INTO OMS_SUBORDERS target
     USING (
         SELECT
@@ -259,8 +260,10 @@ def process_oms_suborders(start_date, end_date):
             MAX(PARTNER_NAME) AS PARTNER_NAME,
             MAX(PARTNER_VAT) AS PARTNER_VAT,
             MAX(PAYMENT_METHOD_NAME) AS PAYMENT_METHOD_NAME,
-            LISTAGG(TRANSFER_WAREHOUSE, ', ')
-                WITHIN GROUP (ORDER BY SUBORDER_ID) AS TRANSFER_WAREHOUSE
+            LISTAGG(
+                NULLIF(TRANSFER_WAREHOUSE, ''), ', ')
+                WITHIN GROUP (ORDER BY SUBORDER_ID)
+                AS TRANSFER_WAREHOUSE
         FROM OMS_SUBORDERSLINE
         WHERE SNOWFLAKE_UPDATED_AT
             BETWEEN '{start_date.strftime("%Y-%m-%d")}'
@@ -324,7 +327,7 @@ def process_oms_suborders(start_date, end_date):
     """
 
     return SnowflakeOperator(
-        task_id='process_oms_sales_orders',
+        task_id='process_oms_suborders',
         sql=sql_query,
         snowflake_conn_id=SNOWFLAKE_CONN_ID,
         autocommit=True,
