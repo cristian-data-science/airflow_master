@@ -22,6 +22,10 @@ OMS_TOKEN_URL = f'{OMS_API_URL}authentication/oauth2/token'
 OMS_ORDER_URL = f'{OMS_API_URL}{OMS_API_INSTANCE}/powerbi/order'
 
 DAYS = 2
+BATCH_LIMIT = 20
+TOTAL_LIMIT = 20000
+DB_WRITE_BATCH_SIZE = 200
+MAX_RETRIES = 5
 
 # Dag definition
 dag = DAG(
@@ -136,6 +140,22 @@ class OMSDataFetcher:
             SNOWFLAKE_CONN_ID
         )
 
+        orders_status_dataframe = \
+            self.extract_status_histories_to_dataframe(orders_list)
+
+        print('[AIRFLOW] Orders Status Dataframe: ')
+        print(orders_status_dataframe.head(20).to_string())
+
+        write_data_to_snowflake(
+            orders_status_dataframe,
+            'OMS_SUBORDER_STATUS_HISTORY',
+            default_args[
+                'snowflake_oms_suborder_status_history_data_table_columns'],
+            'PRIMARY_KEY',
+            'TEMP_OMS_SUBORDER_STATUS_HISTORY',
+            SNOWFLAKE_CONN_ID
+        )
+
     def orders_to_dataframe(self, orders):
         orders_data = []
         for order in orders:
@@ -208,18 +228,36 @@ class OMSDataFetcher:
         df = df.drop_duplicates(subset=['LINE_ID'], keep='first')
         return df
 
+    def extract_status_histories_to_dataframe(self, orders):
+        status_histories = []
+        for order in orders:
+            for status in order.get('status_histories_ids', []):
+                if status['status']:
+                    suborder_id = order['ecommerce_name_child']
+                    status_name = status['status']
+                    register_date = status['create_date']
+                    status_histories.append({
+                        'PRIMARY_KEY': (
+                            f'{suborder_id}-{status_name}-{register_date}'
+                        ),
+                        'ECOMMERCE_NAME_CHILD': suborder_id,
+                        'STATUS': status_name,
+                        'REGISTER_DATE': register_date
+                    })
+        return pd.DataFrame(status_histories)
+
 
 def run_get_oms_orders(**context):
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
     fetcher = OMSDataFetcher()
     fetcher.fetch_oms_orders(
-        batch_limit=20, total_limit=200,
-        db_write_batch_size=200, max_retries=5
+        batch_limit=BATCH_LIMIT, total_limit=TOTAL_LIMIT,
+        db_write_batch_size=DB_WRITE_BATCH_SIZE, max_retries=MAX_RETRIES
     )
 
 
-def process_oms_suborders(start_date, end_date):
+def process_oms_suborders(start_date):
     '''
     Updates the OMS_SUBORDERS table with aggregated order data from
     OMS_SUBORDERSLINE table within the specified date range.
@@ -266,8 +304,7 @@ def process_oms_suborders(start_date, end_date):
                 AS TRANSFER_WAREHOUSE
         FROM OMS_SUBORDERSLINE
         WHERE SNOWFLAKE_UPDATED_AT
-            BETWEEN '{start_date.strftime("%Y-%m-%d")}'
-            AND '{end_date.strftime("%Y-%m-%d")}'
+            > '{start_date.strftime("%Y-%m-%d")}'
         GROUP BY SUBORDER_ID
     ) AS source
     ON target.SUBORDER_ID = source.SUBORDER_ID
@@ -347,7 +384,7 @@ end_date = datetime.now().replace(
     )
 start_date = end_date - timedelta(days=DAYS)
 task_2 = process_oms_suborders(
-    start_date, end_date
+    start_date
 )
 
 
