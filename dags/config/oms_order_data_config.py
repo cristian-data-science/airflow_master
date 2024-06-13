@@ -45,5 +45,12 @@ default_args = {
         ('PAYMENT_METHOD_NAME', 'VARCHAR(255)'),
         ('WAREHOUSE', 'VARCHAR(255)'),
         ('TRANSFER_WAREHOUSE', 'VARCHAR(255)')
+    ],
+    'snowflake_oms_suborder_status_history_data_table_columns': [
+        ('PRIMARY_KEY', 'STRING'),
+        ('ECOMMERCE_NAME_CHILD', 'STRING'),
+        ('STATUS', 'STRING'),
+        ('REGISTER_DATE', 'TIMESTAMP_NTZ')
     ]
+
 }
