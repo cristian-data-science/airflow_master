@@ -23,7 +23,7 @@ OMS_ORDER_URL = f'{OMS_API_URL}{OMS_API_INSTANCE}/powerbi/order'
 
 DAYS = 2
 BATCH_LIMIT = 20
-TOTAL_LIMIT = 20000
+TOTAL_LIMIT = 400
 DB_WRITE_BATCH_SIZE = 200
 MAX_RETRIES = 5
 
@@ -33,7 +33,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract order data from OMS '
     'and write in Snowflake',
-    schedule_interval='*/30 * * * *',
+    schedule_interval='0 */4 * * *',
 )
 
 
@@ -244,7 +244,8 @@ class OMSDataFetcher:
                         'STATUS': status_name,
                         'REGISTER_DATE': register_date
                     })
-        return pd.DataFrame(status_histories)
+        df = pd.DataFrame(status_histories)
+        return df.drop_duplicates(subset=['PRIMARY_KEY'], keep='first')
 
 
 def run_get_oms_orders(**context):
