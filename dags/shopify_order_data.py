@@ -21,6 +21,11 @@ SHOPIFY_API_URL = \
     os.getenv('SHOPIFY_API_URL') + os.getenv('SHOPIFY_API_VERSION') + '/'
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
+BATCH_LIMIT = 250
+RESPONSE_LIMIT = None
+DAYS = None
+BATCH_SIZE = 10000
+
 # Dag definition
 dag = DAG(
     'shopify_order_data',
@@ -206,7 +211,10 @@ def run_get_shopify_orders(**context):
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
     get_shopify_orders(
-        batch_limit=250, response_limit=None, days=3, batch_size=10000
+        batch_limit=BATCH_LIMIT,
+        response_limit=RESPONSE_LIMIT,
+        days=DAYS,
+        batch_size=BATCH_SIZE
     )
 
 
