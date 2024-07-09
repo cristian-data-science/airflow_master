@@ -157,8 +157,10 @@ def orders_to_dataframe(orders_datalist):
     if orders_datalist:
         # Extraemos directamente los campos relevantes de cada orden
         orders_cleaned = []
+        shipping_addresses = []
         for order in orders_datalist:
             customer_info = order.get('customer') or {}
+            shipping_address = order.get('shipping_address') or {}
             order_data = {
                 'ORDER_ID': order.get('id'),
                 'EMAIL': order.get('email') or order.get('contact_email'),
@@ -187,11 +189,34 @@ def orders_to_dataframe(orders_datalist):
             }
             orders_cleaned.append(order_data)
 
-        df = pd.DataFrame(orders_cleaned)
+            shipping_data = {
+                'ORDER_ID': order.get('id'),
+                'CUSTOMER_ID': shipping_address.get('company'),
+                'EMAIL': order.get('email') or order.get('contact_email'),
+                'ORDER_DATE': order.get('created_at'),
+                'FIRST_NAME': shipping_address.get('first_name'),
+                'LAST_NAME': shipping_address.get('last_name'),
+                'ADDRESS1': shipping_address.get('address1'),
+                'ADDRESS2': shipping_address.get('address2'),
+                'CITY': shipping_address.get('city'),
+                'ZIP': shipping_address.get('zip'),
+                'PROVINCE': shipping_address.get('province'),
+                'COUNTRY': shipping_address.get('country'),
+                'PHONE': shipping_address.get('phone'),
+                'LATITUDE': shipping_address.get('latitude'),
+                'LONGITUDE': shipping_address.get('longitude'),
+                'ACCEPTS_MARKETING': customer_info.get('accepts_marketing'),
+                'MARKETING_OPT_IN_LEVEL':
+                    customer_info.get('marketing_opt_in_level'),
+            }
+            shipping_addresses.append(shipping_data)
 
-        print(df.head().to_string())
+        orders_df = pd.DataFrame(orders_cleaned)
+        shipping_df = pd.DataFrame(shipping_addresses)
+
+        print(orders_df.head().to_string())
         print(f'Creating/updating {len(orders_datalist)} orders from Shopify.')
-        return df
+        return orders_df, shipping_df
     else:
         print('No data received from get_shopify_orders')
         return None
@@ -219,7 +244,7 @@ def run_get_shopify_orders(**context):
 
 
 def process_orders(orders_list):
-    orders_dataframe = \
+    orders_dataframe, shipping_addresses_dataframe = \
         orders_to_dataframe(orders_list)
 
     write_data_to_snowflake(
@@ -228,6 +253,15 @@ def process_orders(orders_list):
         default_args['snowflake_shopify_order_table_columns'],
         'ORDER_ID',
         'TEMP_SHOPIFY_ORDERS',
+        SNOWFLAKE_CONN_ID
+    )
+
+    write_data_to_snowflake(
+        shipping_addresses_dataframe,
+        'SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
+        default_args['snowflake_shopify_shipping_address_table_columns'],
+        'ORDER_ID',
+        'TEMP_SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
         SNOWFLAKE_CONN_ID
     )
 

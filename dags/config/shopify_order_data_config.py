@@ -35,5 +35,24 @@ default_args = {
         # customer.marketing_opt_in_level
         ('DISCOUNTED_PRICE', 'FLOAT'),
         # shipping_lines.discounted_price
+    ],
+    'snowflake_shopify_shipping_address_table_columns': [
+        ('ORDER_ID', 'VARCHAR(255)'),
+        ('CUSTOMER_ID', 'VARCHAR(255)'),
+        ('EMAIL', 'VARCHAR(255)'),
+        ('ORDER_DATE', 'TIMESTAMP_NTZ'),
+        ('FIRST_NAME', 'VARCHAR(255)'),
+        ('LAST_NAME', 'VARCHAR(255)'),
+        ('ADDRESS1', 'VARCHAR(255)'),
+        ('ADDRESS2', 'VARCHAR(255)'),
+        ('CITY', 'VARCHAR(255)'),
+        ('ZIP', 'VARCHAR(255)'),
+        ('PROVINCE', 'VARCHAR(255)'),
+        ('COUNTRY', 'VARCHAR(255)'),
+        ('PHONE', 'VARCHAR(255)'),
+        ('LATITUDE', 'FLOAT'),
+        ('LONGITUDE', 'FLOAT'),
+        ('ACCEPTS_MARKETING', 'BOOLEAN'),
+        ('MARKETING_OPT_IN_LEVEL', 'VARCHAR(255)')
     ]
 }
