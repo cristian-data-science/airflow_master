@@ -8,7 +8,7 @@ from datetime import timedelta, datetime, timezone
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_product_variants_data_config import default_args
+from dags.config.klaviyo_retail_sales_loading_config import default_args
 
 
 load_dotenv()
@@ -21,15 +21,17 @@ KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
 KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
 
-START_DATE = '2024-06-01'
-END_DATE = '2024-07-01'
+START_DATE = '2024-05-01'
+END_DATE = '2024-05-31'
 CUSTOMER_ACCOUNT = None  # None to process all customers
 AVOID_RUTS = ['55555555-5', '66666666-6', '22222222-2']
 
+customer_updated_count = 0
 processed_sales = set()
 processed_customers = set()
 email_found_in_processed_sale = set()
-email_found_in_erp = set()
+email_found_in_erp_customers_primary_contact = set()
+email_found_in_erp_customers_receipt_mail = set()
 email_found_in_shopify = set()
 email_not_found = set()
 klaviyo_existing_customers = set()
@@ -62,10 +64,29 @@ def get_retail_sales(
     - pandas.DataFrame: DataFrame containing the retail sales data.
     '''
     query = f"""
-    SELECT *
-    FROM ERP_PROCESSED_SALESLINE
-    WHERE DATE(INVOICEDATE) BETWEEN '{start_date}' AND '{end_date}'
-    AND CECO = 'Retail'
+    WITH latest_shopify_address AS (
+        SELECT CUSTOMER_ID, EMAIL
+        FROM (
+            SELECT CUSTOMER_ID, EMAIL,
+                   ROW_NUMBER() OVER (
+                    PARTITION BY CUSTOMER_ID ORDER BY ORDER_ID DESC
+                    ) AS rn
+            FROM SHOPIFY_ORDERS_SHIPPING_ADDRESSES
+        )
+        WHERE rn = 1
+    )
+    SELECT sl.*,
+           ec.PRIMARYCONTACTEMAIL AS ERP_CUST_PRIMARYCONTACTEMAIL,
+           ec.RECEIPTEMAIL,
+           so.EMAIL AS SHOPIFY_EMAIL
+    FROM ERP_PROCESSED_SALESLINE sl
+    LEFT JOIN ERP_CUSTOMERS ec
+        ON sl.CUSTACCOUNT = ec.CUSTOMERACCOUNT
+    LEFT JOIN latest_shopify_address so
+        ON sl.CUSTACCOUNT = so.CUSTOMER_ID
+    WHERE DATE(sl.INVOICEDATE) 
+            BETWEEN '{start_date}' AND '{end_date}'
+        AND sl.CECO = 'Retail'
     """
 
     if cust_account:
@@ -93,8 +114,10 @@ def get_retail_sales(
         df['CREATEDTRANSACTIONDATE2'
            ].apply(lambda x: x.tz_convert(local_tz).isoformat())
     print(f'[Airflow] Fetched {df.shape[0]} sale lines from Snowflake.')
-    print(f'{len(df["SALESID"].nunique())} Sales.')
-    print(f'{len(df["CUSTACCOUNT"].nunique())} Customers.')
+    print(f'{df["SALESID"].nunique()} Sales.')
+    global total_customer_to_process
+    total_customer_to_process = df["CUSTACCOUNT"].nunique()
+    print(f'{total_customer_to_process} Customers.')
     return df
 
 
@@ -180,23 +203,33 @@ def process_retail_sales_df(retail_sales_df):
         customer_email = row['PRIMARYCONTACTEMAIL']
 
         if customer_email:
+            print(f'[Airflow] Mail found for PRIMARYCONTACTEMAIL in '
+                  f'sale {sales_id}|{customer_email}')
             email_found_in_processed_sale.add(cust_account)
         else:
-            print(f'[Airflow] No mail found for '
-                  f'PRIMARYCONTACTEMAIL in sale {sales_id}')
-            customer_email = get_customer_email_from_erp(cust_account)
+            customer_email = row['ERP_CUST_PRIMARYCONTACTEMAIL']
             if customer_email:
-                email_found_in_erp.add(cust_account)
+                print(f'[Airflow] Mail found for ERP_CUST_PRIMARYCONTACTEMAIL'
+                      f' in ERP_CUSTOMERS in sale {sales_id}|{customer_email}')
+                email_found_in_erp_customers_primary_contact.add(cust_account)
             else:
-                print(f'[Airflow] No mail found for '
-                      f'customer in ERP_CUSTOMERS in sale {sales_id}')
-                customer_email = get_customer_email_from_shopify(cust_account)
+                customer_email = row['RECEIPTEMAIL']
                 if customer_email:
-                    email_found_in_shopify.add(cust_account)
+                    print(f'[Airflow] Mail found for RECEIPTEMAIL customer in '
+                          f'ERP_CUSTOMERS in sale {sales_id}|{customer_email}')
+                    email_found_in_erp_customers_receipt_mail.add(cust_account)
                 else:
-                    print(f'[Airflow] No mail found for customer '
-                          f'in SHOPIFY_ORDERS_SHIPPING ADD in sale {sales_id}')
-                    email_not_found.add(cust_account)
+                    customer_email = row['SHOPIFY_EMAIL']
+                    if customer_email:
+                        print(f'[Airflow] Mail found for EMAIL in '
+                              f'SHOPIFY_ORDERS_SHIPPING in sale {sales_id}|'
+                              f'{customer_email}')
+                        email_found_in_shopify.add(cust_account)
+                    else:
+                        print(f'[Airflow] No mail found for customer in '
+                              f'any table for sale '
+                              f'{sales_id}|{cust_account}')
+                        email_not_found.add(cust_account)
 
         if customer_email:
             if cust_account not in customers_dict:
@@ -611,6 +644,7 @@ def send_to_klaviyo(event_json):
 
 def run_get_retail_sales_to_klaviyo(**context):
     print('[Airflow] Staritng Dag - Retail Sales to Klaviyo ##')
+    global customer_updated_count, total_customer_to_process
     print(f'Processing sales from {START_DATE} to {END_DATE}')
     retail_sales_df = get_retail_sales(
         start_date=START_DATE, end_date=END_DATE,
@@ -621,6 +655,7 @@ def run_get_retail_sales_to_klaviyo(**context):
     customers_retail_sales_dict = process_retail_sales_df(retail_sales_df)
     print('## Customer retail sales dictionary ##')
     print(customers_retail_sales_dict)
+    print('## Number of customers to load: ', len(customers_retail_sales_dict))
 
     customers_retail_sales_dict = \
         check_skus_in_shopify(customers_retail_sales_dict)
@@ -655,11 +690,11 @@ def run_get_retail_sales_to_klaviyo(**context):
                 recent_customers_retail_sales_dict.get(cust_account, customer)
             customer['accepts_marketing'] = False
 
+        print('## Klaviyo JSON ##')
         klaviyo_json_customer_list = \
             create_klaviyo_json_list(
                 customer, show_location_info=False
             )
-        print('## Klaviyo JSON ##')
         for i in klaviyo_json_customer_list:
             print('## Sending to Klaviyo ##')
             print(f'~{i["properties"]["Order ID"]} - {i["event"]} {i["time"]}')
@@ -676,14 +711,19 @@ def run_get_retail_sales_to_klaviyo(**context):
             print(f'~{i["properties"]["Order ID"]} - {i["event"]} {i["time"]}')
             # print(json.dumps(i, indent=4))
             send_to_klaviyo(i)
+        customer_updated_count += 1
+        print(f'## Customer processes: {customer_updated_count}'
+              f'/{total_customer_to_process} ##')
 
     print("\n### Summary ###")
     print(f"Number of initial sales processed: {len(processed_sales)}")
     print(f"Number of initial customers processed: {len(processed_customers)}")
     print(f"Number of customers with email "
           f"found in processed sales: {len(email_found_in_processed_sale)}")
-    print(f"Number of customers with email "
-          f"found in ERP: {len(email_found_in_erp)}")
+    print(f"Number of customers with email in PRIMARYCONTACT "
+          f"found in ERP: {len(email_found_in_erp_customers_primary_contact)}")
+    print(f"Number of customers with email in RECEIPTMAIL"
+          f"found in ERP: {len(email_found_in_erp_customers_receipt_mail)}")
     print(f"Number of customers with email "
           f"found in Shopify: {len(email_found_in_shopify)}")
     print(f"Number of customers with no email "
@@ -697,8 +737,11 @@ def run_get_retail_sales_to_klaviyo(**context):
     print(f"Sales IDs: {list(processed_sales)}")
     print(f"Customer Accounts: {list(processed_customers)}")
     print(f"Emails Found in Processed "
-          f"Sales: {list(email_found_in_processed_sale)}")
-    print(f"Emails Found in ERP Customers: {list(email_found_in_erp)}")
+          f"Emails: {list(email_found_in_processed_sale)}")
+    print(f"Emails Found in ERP Customers in PRIMARYCONTACT: "
+          f"{list(email_found_in_erp_customers_primary_contact)}")
+    print(f"Emails Found in ERP Customers in RECEIPTMAIL: "
+          f"{list(email_found_in_erp_customers_receipt_mail)}")
     print(f"Emails Found in Shopify Shipping "
           f"Addresses: {list(email_found_in_shopify)}")
     print(f"Emails Not Found: {list(email_not_found)}")
