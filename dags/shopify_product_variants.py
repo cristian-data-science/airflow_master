@@ -112,6 +112,17 @@ def variants_to_dataframe(products_list):
     transformed_data = []
     for product in products_list:
         for variant in product['variants']:
+            # Initialize image variables
+            image_id, image_alt, image_src = None, None, None
+
+            # Find the corresponding image for the variant
+            for image in product['images']:
+                if variant['id'] in image['variant_ids']:
+                    image_id = image['id']
+                    image_alt = image['alt']
+                    image_src = image['src']
+                    break
+
             transformed_data.append({
                 'PRODUCT_ID': product['id'],
                 'VARIANT_ID': variant['id'],
@@ -148,7 +159,10 @@ def variants_to_dataframe(products_list):
                 'VARIANT_BARCODE': variant['barcode'],
                 'VARIANT_WEIGHT': variant['weight'],
                 'VARIANT_WEIGHT_UNIT': variant['weight_unit'],
-                'VARIANT_REQUIRES_SHIPPING': variant['requires_shipping']
+                'VARIANT_REQUIRES_SHIPPING': variant['requires_shipping'],
+                'IMAGE_ID': image_id,
+                'IMAGE_ALT': image_alt,
+                'IMAGE_SRC': image_src
             })
     df = DataFrame(transformed_data)
     print(df.head().to_string())
@@ -165,10 +179,10 @@ def run_get_shopify_product_variants(**context):
     if variants_df is not None:
         write_data_to_snowflake(
             variants_df,
-            'SHOPIFY_PRODUCT_VARIANTS',
+            'SHOPIFY_PRODUCT_VARIANTS2',
             default_args['snowflake_shopify_product_variants_table_columns'],
             'VARIANT_ID',
-            'TEMP_SHOPIFY_PRODUCT_VARIANTS',
+            'TEMP_SHOPIFY_PRODUCT_VARIANTS2',
             SNOWFLAKE_CONN_ID
         )
 

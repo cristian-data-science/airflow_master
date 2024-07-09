@@ -42,6 +42,9 @@ default_args = {
         ('VARIANT_BARCODE', 'VARCHAR'),
         ('VARIANT_WEIGHT', 'FLOAT'),
         ('VARIANT_WEIGHT_UNIT', 'VARCHAR'),
-        ('VARIANT_REQUIRES_SHIPPING', 'BOOLEAN')
+        ('VARIANT_REQUIRES_SHIPPING', 'BOOLEAN'),
+        ('IMAGE_ID', 'BIGINT'),
+        ('IMAGE_ALT', 'VARCHAR'),
+        ('IMAGE_SRC', 'VARCHAR'),
     ]
 }
