@@ -69,7 +69,8 @@ class OMSIncidenceDataFetcher:
                 params = {
                     'limit': batch_limit,
                     'offset': offset,
-                    'filters': filters
+                    'filters': filters,
+                    'order': 'id desc'
                 }
                 prepared_url = requests.Request(
                     'GET', OMS_INCIDENCE_URL,
@@ -200,12 +201,20 @@ class OMSIncidenceDataFetcher:
         df_history = pd.DataFrame(all_history_data)
         df_history['CREATE_DATE'] = \
             df_history['CREATE_DATE'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df_history['STATE'] = df_history['STATE'].fillna('').astype(str)
+        df_history['USER'] = df_history['USER'].fillna('').astype(str)
+        df_history.drop_duplicates(inplace=True)
         df_order_incidence['INCIDENCE_CREATE_DATE'] = \
             df_order_incidence[
                 'INCIDENCE_CREATE_DATE'].dt.strftime('%Y-%m-%d %H:%M:%S')
         df_order_incidence['LAST_REGISTER_DATE'] = \
             df_order_incidence[
                 'LAST_REGISTER_DATE'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        df_order_incidence['STATE'] = \
+            df_order_incidence['STATE'].fillna('').astype(str)
+        df_order_incidence['USER'] = \
+            df_order_incidence['USER'].fillna('').astype(str)
+        df_order_incidence.drop_duplicates(inplace=True)
         return df_order_incidence, df_history
 
 
