@@ -181,7 +181,7 @@ def run_get_shopify_product_variants(**context):
             variants_df,
             'SHOPIFY_PRODUCT_VARIANTS2',
             default_args['snowflake_shopify_product_variants_table_columns'],
-            'VARIANT_ID',
+            ['VARIANT_ID'],
             'TEMP_SHOPIFY_PRODUCT_VARIANTS2',
             SNOWFLAKE_CONN_ID
         )

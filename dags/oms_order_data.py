@@ -23,7 +23,7 @@ OMS_ORDER_URL = f'{OMS_API_URL}{OMS_API_INSTANCE}/powerbi/order'
 
 DAYS = 2
 BATCH_LIMIT = 20
-TOTAL_LIMIT = 400
+TOTAL_LIMIT = 2000
 DB_WRITE_BATCH_SIZE = 200
 MAX_RETRIES = 5
 
@@ -33,7 +33,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract order data from OMS '
     'and write in Snowflake',
-    schedule_interval='0 */4 * * *',
+    schedule_interval='0 */4 * * *'
 )
 
 
@@ -69,7 +69,19 @@ class OMSDataFetcher:
                 headers['Authorization'] = f'Bearer {self.auth_token}'
 
             try:
-                params = {'limit': batch_limit, 'offset': offset}
+                date_limit = (
+                    datetime.now() - timedelta(days=DAYS)
+                    ).replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ).isoformat()
+                filters = str([
+                    ('state_write_date', '>', date_limit)
+                ])
+                params = {
+                    'limit': batch_limit,
+                    'offset': offset,
+                    'filters': filters
+                }
                 print(f'[OMS] Getting {batch_limit} orders - offset: {offset}')
                 print(f'[OMS] Request count: {requests_count}')
                 response = requests.get(
@@ -135,7 +147,7 @@ class OMSDataFetcher:
             orders_dataframe,
             'OMS_SUBORDERSLINE',
             default_args['snowflake_oms_suborder_line_data_table_columns'],
-            'LINE_ID',
+            ['LINE_ID'],
             'TEMP_OMS_SUBORDERSLINE',
             SNOWFLAKE_CONN_ID
         )
@@ -151,7 +163,7 @@ class OMSDataFetcher:
             'OMS_SUBORDER_STATUS_HISTORY',
             default_args[
                 'snowflake_oms_suborder_status_history_data_table_columns'],
-            'PRIMARY_KEY',
+            ['PRIMARY_KEY'],
             'TEMP_OMS_SUBORDER_STATUS_HISTORY',
             SNOWFLAKE_CONN_ID
         )
