@@ -19,12 +19,13 @@ SHOPIFY_API_URL = \
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
-KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
+# KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
 
-START_DATE = '2024-05-01'
-END_DATE = '2024-05-31'
+START_DATE = '2024-03-30'
+END_DATE = '2024-03-30'
 CUSTOMER_ACCOUNT = None  # None to process all customers
 AVOID_RUTS = ['55555555-5', '66666666-6', '22222222-2']
+AVOID_EMAILS = ['poschile@patagonia.com', 'patagonia@patagonia.com']
 
 customer_updated_count = 0
 processed_sales = set()
@@ -84,7 +85,7 @@ def get_retail_sales(
         ON sl.CUSTACCOUNT = ec.CUSTOMERACCOUNT
     LEFT JOIN latest_shopify_address so
         ON sl.CUSTACCOUNT = so.CUSTOMER_ID
-    WHERE DATE(sl.INVOICEDATE) 
+    WHERE DATE(sl.INVOICEDATE)
             BETWEEN '{start_date}' AND '{end_date}'
         AND sl.CECO = 'Retail'
     """
@@ -115,7 +116,6 @@ def get_retail_sales(
            ].apply(lambda x: x.tz_convert(local_tz).isoformat())
     print(f'[Airflow] Fetched {df.shape[0]} sale lines from Snowflake.')
     print(f'{df["SALESID"].nunique()} Sales.')
-    global total_customer_to_process
     total_customer_to_process = df["CUSTACCOUNT"].nunique()
     print(f'{total_customer_to_process} Customers.')
     return df
@@ -231,9 +231,9 @@ def process_retail_sales_df(retail_sales_df):
                               f'{sales_id}|{cust_account}')
                         email_not_found.add(cust_account)
 
-        if customer_email:
-            if cust_account not in customers_dict:
-                customers_dict[cust_account] = {
+        if customer_email and customer_email not in AVOID_EMAILS:
+            if customer_email not in customers_dict:
+                customers_dict[customer_email] = {
                     'customer_email': customer_email,
                     'customer_RUT': cust_account,
                     'full_name': row['ORGANIZATIONNAME'],
@@ -241,8 +241,8 @@ def process_retail_sales_df(retail_sales_df):
                 }
                 processed_customers.add(customer_email)
 
-            if sales_id not in customers_dict[cust_account]['orders']:
-                customers_dict[cust_account]['orders'][sales_id] = {
+            if sales_id not in customers_dict[customer_email]['orders']:
+                customers_dict[customer_email]['orders'][sales_id] = {
                     'lines': [],
                     'retail_store': row['CANAL'],
                     'transaction_date': row['CREATEDTRANSACTIONDATE2'],
@@ -250,12 +250,14 @@ def process_retail_sales_df(retail_sales_df):
                 }
                 processed_sales.add(sales_id)
 
-            customers_dict[cust_account]['orders'][sales_id]['lines'].append({
-                'sku': (f"{row['ITEMID']}-"
-                        f"{row['INVENTCOLORID']}-{row['INVENTSIZEID']}"),
-                'quantity': row['QTY'],
-                'price_with_taxes': row['LINEAMOUNTWITHTAXES']
-            })
+            customers_dict[customer_email]['orders'][sales_id]['lines'].append(
+                {
+                    'sku': (f"{row['ITEMID']}-"
+                            f"{row['INVENTCOLORID']}-{row['INVENTSIZEID']}"),
+                    'quantity': row['QTY'],
+                    'price_with_taxes': row['LINEAMOUNTWITHTAXES']
+                }
+            )
         else:
             print(f'[Airflow] No mail found for customer '
                   f'in SHOPIFY_ORDERS_SHIPPING ADD in sale {sales_id}')
@@ -644,7 +646,7 @@ def send_to_klaviyo(event_json):
 
 def run_get_retail_sales_to_klaviyo(**context):
     print('[Airflow] Staritng Dag - Retail Sales to Klaviyo ##')
-    global customer_updated_count, total_customer_to_process
+    global customer_updated_count
     print(f'Processing sales from {START_DATE} to {END_DATE}')
     retail_sales_df = get_retail_sales(
         start_date=START_DATE, end_date=END_DATE,
@@ -655,16 +657,17 @@ def run_get_retail_sales_to_klaviyo(**context):
     customers_retail_sales_dict = process_retail_sales_df(retail_sales_df)
     print('## Customer retail sales dictionary ##')
     print(customers_retail_sales_dict)
-    print('## Number of customers to load: ', len(customers_retail_sales_dict))
+    total_customer_to_process = len(customers_retail_sales_dict)
+    print('## Number of customers to load: ', total_customer_to_process)
 
     customers_retail_sales_dict = \
         check_skus_in_shopify(customers_retail_sales_dict)
     print('## Retail sales dictionary with Shopify info ##')
     print(customers_retail_sales_dict)
 
-    for cust_account, customer in customers_retail_sales_dict.items():
+    for customer_email, customer in customers_retail_sales_dict.items():
         print(f'[Airflow] Processing customer to '
-              f'send to klaviyo: {cust_account}')
+              f'send to klaviyo: {customer_email}')
         profile_exists, accepts_marketing = \
             check_klaviyo_profile(customer['customer_email'])
         customer['accepts_marketing'] = accepts_marketing
@@ -681,13 +684,18 @@ def run_get_retail_sales_to_klaviyo(**context):
             recent_sales_df = get_retail_sales(
                 start_date=twelve_months_ago,
                 end_date=pd.Timestamp.now().strftime('%Y-%m-%d'),
-                cust_account=cust_account)
+                cust_account=customer["customer_RUT"])
+            if recent_sales_df.empty:
+                print(f'[Airflow] Error getting 12 months sales for '
+                      f'{customer["customer_email"]}. ')
+                continue
             recent_customers_retail_sales_dict = \
                 process_retail_sales_df(recent_sales_df)
             recent_customers_retail_sales_dict = \
                 check_skus_in_shopify(recent_customers_retail_sales_dict)
             customer = \
-                recent_customers_retail_sales_dict.get(cust_account, customer)
+                recent_customers_retail_sales_dict.get(
+                    customer_email, customer)
             customer['accepts_marketing'] = False
 
         print('## Klaviyo JSON ##')
