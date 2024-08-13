@@ -142,7 +142,7 @@ class OMSIncidenceDataFetcher:
             orders_incidences_dataframe,
             'OMS_ORDER_INCIDENCE',
             default_args['snowflake_oms_order_incidence_table_columns'],
-            'ECOMMERCE_NAME_CHILD',
+            ['ECOMMERCE_NAME_CHILD'],
             'TEMP_OMS_ORDER_INCIDENCE',
             SNOWFLAKE_CONN_ID
         )
@@ -151,7 +151,7 @@ class OMSIncidenceDataFetcher:
             incendences_history_dataframe,
             'OMS_HISTORY_INCIDENCE',
             default_args['snowflake_oms_history_incidence_table_columns'],
-            'PRIMARY_KEY',
+            ['PRIMARY_KEY'],
             'TEMP_OMS_HISTORY_INCIDENCE',
             SNOWFLAKE_CONN_ID
         )

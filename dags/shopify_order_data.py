@@ -251,7 +251,7 @@ def process_orders(orders_list):
         orders_dataframe,
         'SHOPIFY_ORDERS',
         default_args['snowflake_shopify_order_table_columns'],
-        'ORDER_ID',
+        ['ORDER_ID'],
         'TEMP_SHOPIFY_ORDERS',
         SNOWFLAKE_CONN_ID
     )
@@ -260,7 +260,7 @@ def process_orders(orders_list):
         shipping_addresses_dataframe,
         'SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
         default_args['snowflake_shopify_shipping_address_table_columns'],
-        'ORDER_ID',
+        ['ORDER_ID'],
         'TEMP_SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
         SNOWFLAKE_CONN_ID
     )

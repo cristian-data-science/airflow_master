@@ -135,7 +135,7 @@ class OMSDataFetcher:
             orders_dataframe,
             'OMS_SUBORDERSLINE',
             default_args['snowflake_oms_suborder_line_data_table_columns'],
-            'LINE_ID',
+            ['LINE_ID'],
             'TEMP_OMS_SUBORDERSLINE',
             SNOWFLAKE_CONN_ID
         )
@@ -151,7 +151,7 @@ class OMSDataFetcher:
             'OMS_SUBORDER_STATUS_HISTORY',
             default_args[
                 'snowflake_oms_suborder_status_history_data_table_columns'],
-            'PRIMARY_KEY',
+            ['PRIMARY_KEY'],
             'TEMP_OMS_SUBORDER_STATUS_HISTORY',
             SNOWFLAKE_CONN_ID
         )

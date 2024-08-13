@@ -239,7 +239,7 @@ def process_customers(customers_list):
         customers_merged_df,
         'SHOPIFY_CUSTOMERS',
         default_args['snowflake_shopify_customer_table_columns'],
-        'SHOPIFY_ID',
+        ['SHOPIFY_ID'],
         'TEMP_SHOPIFY_CUSTOMERS',
         SNOWFLAKE_CONN_ID
     )
@@ -248,7 +248,7 @@ def process_customers(customers_list):
         addresses_df,
         'SHOPIFY_CUSTOMER_ADDRESSES',
         default_args['snowflake_shopify_customer_addresses_table_columns'],
-        'SHOPIFY_ID',
+        ['SHOPIFY_ID'],
         'TEMP_SHOPIFY_CUSTOMER_ADDRESSES',
         SNOWFLAKE_CONN_ID
     )
