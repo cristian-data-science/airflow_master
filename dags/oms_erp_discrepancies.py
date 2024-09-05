@@ -15,7 +15,7 @@ load_dotenv()
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
 # Definir parámetros del DAG
-interval_days = 100
+interval_days = 30  
 number_results = 5
 max_days = 7  # Máximo número de días para la condición de antigüedad
 
@@ -29,12 +29,10 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     # Query a ejecutar - con filtro de intervalo de días
     query = f'''
     SELECT s.*
-    FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_COPY s
-    LEFT JOIN PATAGONIA.CORE_TEST.OMS_SUBORDERS e
-    ON s.NAME = e.ECOMMERCE_NAME
-    WHERE e.ECOMMERCE_NAME IS NULL 
-      AND s.PROCESSED_AT > CURRENT_TIMESTAMP - INTERVAL '{interval_days} DAYS'
-      AND s.FINANCIAL_STATUS = 'paid'
+    FROM PATAGONIA.CORE_TEST.OMS_SUBORDERS s
+    LEFT JOIN PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
+    ON s.ECOMMERCE_NAME = e.PURCHORDERFORMNUM AND e.SALESPOOLID LIKE 'ECOM'
+    WHERE e.PURCHORDERFORMNUM IS NULL
     '''
 
     # Ejecutar la query
@@ -51,11 +49,11 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     conn.close()
     
     # Renombrar columnas
-    df.rename(columns={"NAME": "Número de orden", "CREATED_AT": "Fecha de creación"}, inplace=True)
+    df.rename(columns={"ECOMMERCE_NAME": "Número de orden", "ORDER_DATE": "Fecha de creación", "ORDER_ID": "ID de orden"}, inplace=True)
 
     # Crear la URL clickeable directamente en la columna "Número de orden"
-    df['Número de orden'] = df['Número de orden'].apply(
-        lambda x: f'<a href="https://admin.shopify.com/store/patagoniachile/orders/{x}" target="_blank">{x}</a>'
+    df['Número de orden'] = df['ID de orden'].apply(
+        lambda x: f'<a href="https://patagonia.omni.pro/orders/esaleorder/{x}" target="_blank">{x}</a>'
     )
     
     # Ordenar el DataFrame completo por "Fecha de creación" de la más antigua a la más nueva
@@ -92,14 +90,17 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
         email = EmailOperator(
             task_id='send_email',
             to='josefa.gonzalez@patagonia.com',
-            subject=f'ALERTA: Discrepancias entre OMS y Shopify en los últimos {interval_days} días',
+            subject=f'ALERTA: Discrepancias entre OMS y ERP.',
             html_content=f"""
-                <p>Se encontraron órdenes que están en Shopify pero no están en OMS en los últimos {interval_days} días:</p>
+                <p>Se han encontrado órdenes que están en OMS pero no están en ERP:</p>
                 <p>{num_filas} órdenes encontradas.</p>
-                 <p>{time_message}</p>
+                <p>{time_message}</p>
                 
+                <h3>Tabla filtrada (Número de orden, Fecha de creación):</h3>
                 {df_sorted_html}
-               
+              
+                <h3>DataFrame completo:</h3>
+                {df_complete_html}
             """,
             dag=kwargs['dag']
         )
@@ -117,9 +118,9 @@ default_args = {
 }
 
 dag = DAG(
-    'oms_shopify_discrepancies',  # Nombre del DAG
+    'oms_erp_discrepancies',  # Nombre del DAG
     default_args=default_args,
-    description='DAG para ver discrepancias entre OMS y Shopify en Snowflake',
+    description='DAG para ver discrepancias entre ERP y OMS en Snowflake',
     schedule_interval='0 0 * * *',  # Ejecutar una vez al día a medianoche
     start_date=days_ago(1),
     catchup=False,
