@@ -18,6 +18,7 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 interval_days = 30  
 number_results = 5
 max_days = 7  # Máximo número de días para la condición de antigüedad
+emails = ['josefa.gonzalez@patagonia.com', 'jofigonzalez@gmail.com']
 
 # Definir la función que se va a ejecutar
 def check_discrepancies_and_send_email(interval_days, number_results, max_days, **kwargs):
@@ -48,20 +49,20 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     cursor.close()
     conn.close()
     
-    # Renombrar columnas
     df.rename(columns={"ECOMMERCE_NAME": "Número de orden", "ORDER_DATE": "Fecha de creación", "ORDER_ID": "ID de orden"}, inplace=True)
 
-    # Crear la URL clickeable directamente en la columna "Número de orden"
-    df['Número de orden'] = df['ID de orden'].apply(
-        lambda x: f'<a href="https://patagonia.omni.pro/orders/esaleorder/{x}" target="_blank">{x}</a>'
-    )
-    
-    # Ordenar el DataFrame completo por "Fecha de creación" de la más antigua a la más nueva
+# Crear la URL clickeable usando el "ORDER_ID" pero mostrando el "ECOMMERCE_NAME" en la tabla
+    df['Número de orden'] = df.apply(
+    lambda row: f'<a href="https://patagonia.omni.pro/orders/esaleorder/{row["ID de orden"]}" target="_blank">{row["Número de orden"]}</a>',
+    axis=1
+)
+
+# Ordenar el DataFrame completo por "Fecha de creación" de la más antigua a la más nueva
     df_sorted_complete = df.sort_values(by='Fecha de creación', ascending=True)
-    
-    # Filtrar solo las columnas "Número de orden" y "Fecha de creación"
+
+# Filtrar solo las columnas "Número de orden" y "Fecha de creación"
     df_filtered = df_sorted_complete[['Número de orden', 'Fecha de creación']]
-    
+
     # Calcular el tiempo desde la orden más antigua
     oldest_order_time = df_filtered['Fecha de creación'].min()
     time_diff = datetime.now() - pd.to_datetime(oldest_order_time)
@@ -89,7 +90,7 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
         # Configurar parámetros del email
         email = EmailOperator(
             task_id='send_email',
-            to='josefa.gonzalez@patagonia.com',
+            to= emails,
             subject=f'ALERTA: Discrepancias entre OMS y ERP.',
             html_content=f"""
                 <p>Se han encontrado órdenes que están en OMS pero no están en ERP:</p>
