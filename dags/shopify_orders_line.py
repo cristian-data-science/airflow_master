@@ -23,7 +23,7 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
 BATCH_LIMIT = 10
 RESPONSE_LIMIT = 10
-DAYS = None
+DAYS = 1
 BATCH_SIZE = 10
 
 # Dag definition
@@ -214,22 +214,21 @@ def orders_to_dataframe(orders_datalist):
 
             line_items = order.get('line_items')
 
-            for line in line_items: 
-
+            for line in line_items:
                 order_line_data = {
-                    'ORDER_ID': order.get('id'),  
-                    'LINE_ITEM_ID':  line.get('id'),
-                    'ORDER_NAME':   order.get('name'),
-                    'SKU':   line.get('sku'),                 
-                    'QUANTITY':   line.get('quantity'),    
-                }
-            orders_line.append(order_line_data)
+                    'ORDER_ID': order.get('id'),
+                    'LINE_ITEM_ID': line.get('id'),
+                    'ORDER_NAME': order.get('name'),
+                    'SKU': line.get('sku'),
+                    'QUANTITY': line.get('quantity'),
+                 }
+                orders_line.append(order_line_data)  # Move this inside the loop
 
         orders_df = pd.DataFrame(orders_cleaned)
         shipping_df = pd.DataFrame(shipping_addresses)
         orders_line_df = pd.DataFrame(orders_line)
 
-        print(orders_df.head().to_string())
+        print(orders_line_df.head(20).to_string())
         print(f'Creating/updating {len(orders_datalist)} orders from Shopify.')
         return orders_df, shipping_df, orders_line_df
     else:
@@ -259,8 +258,22 @@ def run_get_shopify_orders(**context):
 
 
 def process_orders(orders_list):
-    orders_dataframe, shipping_addresses_dataframe = \
+    orders_dataframe, shipping_addresses_dataframe, orders_line_dataframe= \
         orders_to_dataframe(orders_list)
+
+    print(orders_dataframe.head().to_string())
+    print(shipping_addresses_dataframe.head().to_string())
+    print(orders_line_dataframe.head().to_string())
+
+    write_data_to_snowflake(
+        orders_line_dataframe,
+        'SHOPIFY_ORDERS_LINE',
+        default_args['snowflake_shopify_orders_line_table_columns'],
+        'LINE_ITEM_ID',
+        'TEMP_SHOPIFY_ORDERS_LINE',
+        SNOWFLAKE_CONN_ID
+        )
+
 
     # write_data_to_snowflake(
     #     orders_dataframe,
@@ -279,6 +292,8 @@ def process_orders(orders_list):
     #     'TEMP_SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
     #     SNOWFLAKE_CONN_ID
     # )
+
+
 
 
 # Task definitions
