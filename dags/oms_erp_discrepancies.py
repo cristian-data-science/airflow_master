@@ -6,7 +6,7 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from airflow.operators.email import EmailOperator
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # Cargar variables de entorno
 load_dotenv()
@@ -27,6 +27,9 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     conn = hook.get_conn()
     cursor = conn.cursor()
 
+    # Calcular la fecha desde la cual se quiere empezar a revisar
+    start_date = (datetime.now() - timedelta(days=interval_days)).strftime('%Y-%m-%d')
+
     # Query a ejecutar - con filtro de intervalo de días
     query = f'''
     SELECT s.*
@@ -34,6 +37,7 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     LEFT JOIN PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
     ON s.ECOMMERCE_NAME = e.PURCHORDERFORMNUM AND e.SALESPOOLID LIKE 'ECOM'
     WHERE e.PURCHORDERFORMNUM IS NULL
+    AND s.ORDER_DATE >= '{start_date}'
     '''
 
     # Ejecutar la query
@@ -51,16 +55,16 @@ def check_discrepancies_and_send_email(interval_days, number_results, max_days, 
     
     df.rename(columns={"ECOMMERCE_NAME": "Número de orden", "ORDER_DATE": "Fecha de creación", "ORDER_ID": "ID de orden"}, inplace=True)
 
-# Crear la URL clickeable usando el "ORDER_ID" pero mostrando el "ECOMMERCE_NAME" en la tabla
+    # Crear la URL clickeable usando el "ORDER_ID" pero mostrando el "ECOMMERCE_NAME" en la tabla
     df['Número de orden'] = df.apply(
-    lambda row: f'<a href="https://patagonia.omni.pro/orders/esaleorder/{row["ID de orden"]}" target="_blank">{row["Número de orden"]}</a>',
-    axis=1
-)
+        lambda row: f'<a href="https://patagonia.omni.pro/orders/esaleorder/{row["ID de orden"]}" target="_blank">{row["Número de orden"]}</a>',
+        axis=1
+    )
 
-# Ordenar el DataFrame completo por "Fecha de creación" de la más antigua a la más nueva
+    # Ordenar el DataFrame completo por "Fecha de creación" de la más antigua a la más nueva
     df_sorted_complete = df.sort_values(by='Fecha de creación', ascending=True)
 
-# Filtrar solo las columnas "Número de orden" y "Fecha de creación"
+    # Filtrar solo las columnas "Número de orden" y "Fecha de creación"
     df_filtered = df_sorted_complete[['Número de orden', 'Fecha de creación']]
 
     # Calcular el tiempo desde la orden más antigua

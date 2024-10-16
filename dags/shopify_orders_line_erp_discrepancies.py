@@ -30,7 +30,7 @@ def check_discrepancies_and_send_email(**kwargs):
             shop.ORDER_ID,
             shop.ORDER_NAME,
             shop.total_cantidad_SHOPIFY,
-            erp.total_cantidad_ERP
+            CAST(erp.total_cantidad_ERP AS INTEGER) AS total_cantidad_ERP
         FROM
             (SELECT 
                 s.ORDER_ID,
@@ -54,7 +54,7 @@ def check_discrepancies_and_send_email(**kwargs):
         ON 
             shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM)
         WHERE 
-            shop.total_cantidad_SHOPIFY != erp.total_cantidad_ERP;
+            shop.total_cantidad_SHOPIFY != CAST(erp.total_cantidad_ERP AS INTEGER);
         '''
         cursor.execute(query)
 
@@ -63,13 +63,23 @@ def check_discrepancies_and_send_email(**kwargs):
         columns = [col[0] for col in cursor.description]
         df = pd.DataFrame(data, columns=columns)
 
+        # Renombrar la columna ORDER_NAME a "Número de orden" y hacer clickeable el número de orden
+        df.rename(columns={"ORDER_NAME": "Número de orden"}, inplace=True)
+        df['Número de orden'] = df.apply(
+            lambda row: f'<a href="https://admin.shopify.com/store/patagoniachile/orders/{row["ORDER_ID"]}" target="_blank">{row["Número de orden"]}</a>',
+            axis=1
+        )
+
+        # Eliminar la columna ORDER_ID ya que no se mostrará en el correo
+        df.drop(columns=['ORDER_ID'], inplace=True)
+
     finally:
         cursor.close()
         conn.close()
 
     # Si hay resultados, enviar un correo de alerta
     if not df.empty:
-        df_html = df.to_html(index=False)
+        df_html = df.to_html(index=False, escape=False)  # escape=False para renderizar correctamente los links en HTML
 
         # Configurar el correo
         email = EmailOperator(
