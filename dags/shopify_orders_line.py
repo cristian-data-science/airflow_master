@@ -155,7 +155,7 @@ def orders_to_dataframe(orders_datalist):
         with appropriately named columns.
     '''
     if orders_datalist:
-        # Extraemos directamente los campos relevantes de cada orden
+        
         orders_cleaned = []
         shipping_addresses = []
         orders_line = []
@@ -273,27 +273,6 @@ def process_orders(orders_list):
         'TEMP_SHOPIFY_ORDERS_LINE',
         SNOWFLAKE_CONN_ID
         )
-
-
-    # write_data_to_snowflake(
-    #     orders_dataframe,
-    #     'SHOPIFY_ORDERS',
-    #     default_args['snowflake_shopify_order_table_columns'],
-    #     'ORDER_ID',
-    #     'TEMP_SHOPIFY_ORDERS',
-    #     SNOWFLAKE_CONN_ID
-    # )
-
-    # write_data_to_snowflake(
-    #     shipping_addresses_dataframe,
-    #     'SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
-    #     default_args['snowflake_shopify_shipping_address_table_columns'],
-    #     'ORDER_ID',
-    #     'TEMP_SHOPIFY_ORDERS_SHIPPING_ADDRESSES',
-    #     SNOWFLAKE_CONN_ID
-    # )
-
-
 
 
 # Task definitions
