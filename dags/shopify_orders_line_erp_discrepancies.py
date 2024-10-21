@@ -7,13 +7,13 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 
-
+# Cargar variables de entorno desde el archivo .env
 load_dotenv()
 
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
-#email addresses to send 
-mails = ['josefa.gonzalez@patagonia.com', 'jofigonzalez@gmail.com']
+# Direcciones de correo electrónico para enviar
+MAILS = ['josefa.gonzalez@patagonia.com', 'jofigonzalez@gmail.com']
 
 
 def check_discrepancies_and_send_email(**kwargs):
@@ -22,7 +22,6 @@ def check_discrepancies_and_send_email(**kwargs):
     cursor = conn.cursor()
 
     try:
-        
         query = '''
         SELECT 
             shop.ORDER_ID,
@@ -56,37 +55,39 @@ def check_discrepancies_and_send_email(**kwargs):
         '''
         cursor.execute(query)
 
-       
         data = cursor.fetchall()
         columns = [col[0] for col in cursor.description]
         df = pd.DataFrame(data, columns=columns)
 
-        
         df.rename(columns={"ORDER_NAME": "Número de orden"}, inplace=True)
         df['Número de orden'] = df.apply(
-            lambda row: f'<a href="https://admin.shopify.com/store/patagoniachile/orders/{row["ORDER_ID"]}" target="_blank">{row["Número de orden"]}</a>',
+            lambda row: (
+                f'<a href="https://admin.shopify.com/store/patagoniachile/orders/'
+                f'{row["ORDER_ID"]}" target="_blank">'
+                f'{row["Número de orden"]}</a>'
+            ),
             axis=1
         )
 
-        
         df.drop(columns=['ORDER_ID'], inplace=True)
 
     finally:
         cursor.close()
         conn.close()
 
-    
     if not df.empty:
-        df_html = df.to_html(index=False, escape=False)  
+        df_html = df.to_html(index=False, escape=False)
 
         email = EmailOperator(
             task_id='send_email',
-            to=mails,
+            to=MAILS,
             subject='ALERTA: Discrepancias detectadas entre Shopify y ERP',
-            html_content=f"""
-                <p>Hay órdenes que muestran distinta cantidad de productos en Shopify y en ERP. A continuación se presentan las órdenes con discrepancias:</p>
-                {df_html}
-            """,
+            html_content=(
+                "<p>Hay órdenes que muestran distinta cantidad de productos en"
+                "Shopify y en ERP. A continuación se presentan las órdenes con"
+                "discrepancias:</p>"
+                f"{df_html}"
+            ),
         )
         email.execute(context=kwargs)
     else:
@@ -102,14 +103,14 @@ default_args = {
 }
 
 dag = DAG(
-    'shopify_orders_line_erp_discrepancies',  
+    'shopify_orders_line_erp_discrepancies',
     default_args=default_args,
-    description='DAG para detectar discrepancias entre Shopify y ERP en Snowflake',
-    schedule_interval='0 0 * * *',  
+    description=(
+        'DAG para detectar discrepancias entre Shopify y ERP en Snowflake'),
+    schedule_interval='0 0 * * *',
     start_date=days_ago(1),
     catchup=False,
 )
-
 
 t1 = PythonOperator(
     task_id='check_discrepancies_and_send_email',
