@@ -161,6 +161,14 @@ def customers_to_dataframe(customers_datalist):
     rows of the DataFrame for review and returns the processed DataFrame.
     '''
     if customers_datalist is not None:
+        for customer in customers_datalist:
+            consent = customer.get('email_marketing_consent', {})
+            customer['accepts_marketing'] = \
+                consent.get('state', None)
+            customer['accepts_marketing_updated_at'] = \
+                consent.get('consent_updated_at', None)
+            customer['marketing_opt_in_level'] = \
+                consent.get('opt_in_level', None)
         df = pd.DataFrame(customers_datalist)
         df = df.rename(columns={
             'id': 'SHOPIFY_ID',
