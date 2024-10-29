@@ -15,8 +15,8 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
 # Parameters to set to trigger the alert
 INTERVAL_DAYS = 60  # number of days within the range
-NUMBER_RESULTS = 1  # maximum number of results returned
-MAX_DAYS = 7  # maximum number of days
+NUMBER_RESULTS = 3  # maximum number of results returned
+MAX_DAYS = 7  # Maximum number of days since the order was placed
 EMAILS = [
     'josefa.gonzalez@patagonia.com',
     'jofigonzalez@gmail.com'
@@ -67,7 +67,8 @@ def check_discrepancies_and_send_combined_email(
         "LEFT JOIN PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE_COPY e "
         "ON s.NAME = e.PURCHORDERFORMNUM AND e.SALESPOOLID LIKE 'ECOM' "
         f"WHERE e.PURCHORDERFORMNUM IS NULL "
-        f"AND s.PROCESSED_AT > CURRENT_TIMESTAMP - INTERVAL '{interval_days} DAYS' "
+        f"AND s.PROCESSED_AT > CURRENT_TIMESTAMP - INTERVAL '{interval_days}"
+        "DAYS' "
         "AND s.FINANCIAL_STATUS = 'paid'"
     )
     cursor.execute(query_shopify)
@@ -92,17 +93,24 @@ def check_discrepancies_and_send_combined_email(
     df_shopify_filtered = df_shopify[['Número de orden', 'Fecha de creación']]
 
     query_quantity_discrepancy = (
-        "SELECT shop.ORDER_ID, shop.ORDER_NAME, shop.total_cantidad_SHOPIFY, "
-        "CAST(erp.total_cantidad_ERP AS INTEGER) AS total_cantidad_ERP "
-        "FROM (SELECT s.ORDER_ID, s.ORDER_NAME, SUM(s.QUANTITY) AS total_cantidad_SHOPIFY "
-        "FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_LINE s "
-        "GROUP BY s.ORDER_ID, s.ORDER_NAME) AS shop "
-        "LEFT JOIN (SELECT s.PURCHORDERFORMNUM, SUM(s.QTY) AS total_cantidad_ERP "
-        "FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE s "
-        "WHERE s.ITEMID != 'DESPACHO' "
-        "GROUP BY s.PURCHORDERFORMNUM) AS erp "
-        "ON shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM) "
-        "WHERE shop.total_cantidad_SHOPIFY != CAST(erp.total_cantidad_ERP AS INTEGER);"
+     "SELECT shop.ORDER_ID, shop.ORDER_NAME, shop.total_cantidad_SHOPIFY, "
+     "CAST(erp.total_cantidad_ERP AS INTEGER) AS total_cantidad_ERP "
+     "FROM (SELECT s.ORDER_ID, s.ORDER_NAME, "
+     "SUM(s.QUANTITY) AS total_cantidad_SHOPIFY "
+     "FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_LINE s "
+     "GROUP BY s.ORDER_ID, s.ORDER_NAME) AS shop "
+     "LEFT JOIN (SELECT s.PURCHORDERFORMNUM, "
+     "CAST(SUM(s.QTY) AS INTEGER) AS total_cantidad_ERP "
+     "FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE s "
+     "WHERE s.ITEMID != 'DESPACHO' "
+     "GROUP BY s.PURCHORDERFORMNUM) AS erp "
+     "ON shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM) "
+     "WHERE shop.total_cantidad_SHOPIFY != erp.total_cantidad_ERP "
+     "AND NOT (erp.total_cantidad_ERP = 2 * shop.total_cantidad_SHOPIFY "
+     "AND EXISTS (SELECT 1 "
+     "FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e "
+     "WHERE e.PURCHORDERFORMNUM = CONCAT('NC-', shop.ORDER_NAME))) "
+     "ORDER BY TRY_TO_NUMBER(erp.PURCHORDERFORMNUM) ASC;"
     )
     cursor.execute(query_quantity_discrepancy)
     columns_quantity = [col[0] for col in cursor.description]
@@ -128,7 +136,7 @@ def check_discrepancies_and_send_combined_email(
     )
     df_shopify_html = (
         df_shopify_filtered.to_html(index=False, escape=False)
-        if not df_shopify_filtered.empty else (  
+        if not df_shopify_filtered.empty else (
              "<p>No se encontraron discrepancias en Shopify.</p>")
     )
     df_quantity_html = (
@@ -140,9 +148,9 @@ def check_discrepancies_and_send_combined_email(
     )
 
     if (
-         not df_oms_filtered.empty 
-         or not df_shopify_filtered.empty 
-         or not df_quantity.empty
+        not df_oms_filtered.empty
+        or not df_shopify_filtered.empty
+        or not df_quantity.empty
          ):
         email_content = (
             "<p>Hay órdenes con discrepancias entre OMS, Shopify y ERP:</p>"
