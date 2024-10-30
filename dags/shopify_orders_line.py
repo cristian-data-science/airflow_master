@@ -155,7 +155,6 @@ def orders_to_dataframe(orders_datalist):
         with appropriately named columns.
     '''
     if orders_datalist:
-        
         orders_cleaned = []
         shipping_addresses = []
         orders_line = []
@@ -222,7 +221,7 @@ def orders_to_dataframe(orders_datalist):
                     'SKU': line.get('sku'),
                     'QUANTITY': line.get('quantity'),
                  }
-                orders_line.append(order_line_data)  # Move this inside the loop
+                orders_line.append(order_line_data)
 
         orders_df = pd.DataFrame(orders_cleaned)
         shipping_df = pd.DataFrame(shipping_addresses)
@@ -258,7 +257,7 @@ def run_get_shopify_orders(**context):
 
 
 def process_orders(orders_list):
-    orders_dataframe, shipping_addresses_dataframe, orders_line_dataframe= \
+    orders_dataframe, shipping_addresses_dataframe, orders_line_dataframe = \
         orders_to_dataframe(orders_list)
 
     print(orders_dataframe.head().to_string())
