@@ -90,29 +90,6 @@ def get_byod_customers(days=0):
     return df_byod_customers
 
 
-def create_snowflake_temporary_table(cursor, temp_table_name, columns):
-    '''
-    Creates a temporary table in Snowflake with a defined column structure.
-
-    This function is useful for preparing the Snowflake environment for data
-    insertion or update operations.
-
-    Parameters:
-    - cursor: A database cursor for Snowflake to execute SQL commands.
-    - temp_table_name (str): The name of the temporary table to be created.
-
-    The function uses the provided cursor to execute an SQL command that
-    creates a temporary table in Snowflake. The table structure is defined
-    based on the columns specified in columns.
-    '''
-    create_temp_table_sql = f'CREATE TEMPORARY TABLE {temp_table_name} ('
-    create_temp_table_sql += \
-        ', '.join([f'{name} {type}' for name, type in columns]) + ');'
-
-    print(create_temp_table_sql)
-    cursor.execute(create_temp_table_sql)
-
-
 def run_get_byod_customers(**context):
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
