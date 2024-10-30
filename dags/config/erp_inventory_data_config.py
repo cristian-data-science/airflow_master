@@ -54,6 +54,27 @@ default_args = {
         ('ONORDERQUANTITY', 'FLOAT'),
         ('TOTALAVAILABLEQUANTITY', 'FLOAT'),
         ('SYNCSTARTDATETIME', 'TIMESTAMP_NTZ')
-    ]
-
+    ],
+    'wms_inventory_table_columns': [
+        ('IDITEM', 'NUMBER'),
+        ('ITEMCODE', 'STRING'),
+        ('SHORTITEMNAME', 'STRING'),
+        ('ITEMDESCRIPTION', 'STRING'),
+        ('QTYSTOCK', 'FLOAT'),
+        ('QTYCICLECOUNT', 'FLOAT'),
+        ('QTYRESERVED', 'FLOAT'),
+        ('QTYRECEIVED', 'FLOAT'),
+        ('QTYSTG', 'FLOAT'),
+        ('QTYSTGD', 'FLOAT'),
+        ('QTYSTGR', 'FLOAT'),
+        ('QTYPENDINGPICKING', 'FLOAT'),
+        ('QTYTASKPICKING', 'FLOAT'),
+        ('QTYTASKSIMULATION', 'FLOAT'),
+        ('QTYHOLDED', 'FLOAT'),
+        ('QTYDOCK', 'FLOAT'),
+        ('QTYTRUCK', 'FLOAT'),
+        ('QTYTOTAL', 'FLOAT'),
+        ('QTYUTILIZADA', 'FLOAT'),
+        ('FECHAREGISTRO', 'TIMESTAMP')
+    ],
 }

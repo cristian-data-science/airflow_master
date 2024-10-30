@@ -6,6 +6,10 @@ from dags.utils.utils import write_data_to_snowflake
 import os
 import pymssql
 import pandas as pd
+import requests
+
+from requests.packages.urllib3.exceptions import InsecureRequestWarning
+requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 
 load_dotenv()
@@ -14,13 +18,17 @@ BYOD_SERVER = os.getenv('BYOD_SERVER')
 BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
+WMS_API_URL = os.getenv('WMS_API_URL')
+WMS_API_USER = os.getenv('WMS_API_USER')
+WMS_API_PASSWORD = os.getenv('WMS_API_PASSWORD')
+
 
 # DAG definition
 dag = DAG(
-    'erp_inventory_data',
+    'erp_and_wms_inventory_data',
     default_args=default_args,
     description='DAG to extract inventory data from'
-    ' ERP and load it into Snowflake',
+    ' ERP and WMS, and load it into Snowflake',
     schedule_interval='0 9 * * *',
     catchup=False
 )
@@ -80,6 +88,39 @@ def get_byod_inventory():
     return df_inventory
 
 
+def get_wms_inventory():
+    print('[Start execution] Fetching inventory data from WMS')
+
+    url = f'{WMS_API_URL}/Users/authenticate'
+    my_obj = {'username': WMS_API_USER, 'password': WMS_API_PASSWORD}
+    r = requests.post(url, json=my_obj, verify=False)
+
+    if r.status_code != 200:
+        raise Exception('Failed to authenticate with WMS API')
+
+    token = r.json()['jwtToken']
+    headers = {'Authorization': token}
+    url = f'{WMS_API_URL}/api/GetStockOwner?owner=PAT'
+    r2 = requests.get(url, headers=headers, verify=False)
+
+    if r2.status_code != 200:
+        raise Exception('Failed to fetch data from WMS')
+
+    df_wms = pd.DataFrame(r2.json())
+
+    # Delete unnecessary columns
+    columns_to_drop = [
+        'idWhs', 'whsCode', 'shortWhsName', 'ownCode', 'ownName'
+    ]
+    df_wms.drop(columns=columns_to_drop, inplace=True)
+    df_wms.columns = [col.upper() for col in df_wms.columns]
+    df_wms.drop_duplicates(inplace=True)
+
+    print(df_wms.head())
+    print(df_wms.shape)
+    return df_wms
+
+
 def run_get_inventory_data(**context):
     '''
     Executes the process to fetch inventory data from ERP and load
@@ -113,8 +154,39 @@ def run_get_inventory_data(**context):
         )
 
 
+def run_get_wms_inventory_data(**context):
+    df_wms = get_wms_inventory()
+    if not df_wms.empty:
+        write_data_to_snowflake(
+            df_wms,
+            'WMS_INVENTORY_HISTORY',
+            default_args['wms_inventory_table_columns'],
+            ['IDITEM', 'ITEMCODE', 'FECHAREGISTRO'],
+            'TEMP_WMS_INVENTORY_HISTORY',
+            SNOWFLAKE_CONN_ID
+        )
+        write_data_to_snowflake(
+            df_wms,
+            'WMS_INVENTORY',
+            default_args['wms_inventory_table_columns'],
+            ['IDITEM', 'ITEMCODE'],
+            'TEMP_WMS_INVENTORY',
+            SNOWFLAKE_CONN_ID
+        )
+
+
+# Tasks
 task_1 = PythonOperator(
     task_id='get_inventory_data',
     python_callable=run_get_inventory_data,
     dag=dag,
 )
+
+task_2 = PythonOperator(
+    task_id='get_wms_inventory_data',
+    python_callable=run_get_wms_inventory_data,
+    dag=dag,
+)
+
+# Task dependencies
+task_1 >> task_2
