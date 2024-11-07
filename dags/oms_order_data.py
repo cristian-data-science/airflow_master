@@ -33,7 +33,8 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract order data from OMS '
     'and write in Snowflake',
-    schedule_interval='0 */4 * * *'
+    schedule_interval='0 */4 * * *',
+    catchup=False,
 )
 
 

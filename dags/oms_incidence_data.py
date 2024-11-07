@@ -26,6 +26,7 @@ dag = DAG(
     description='DAG to extract incidence data from OMS '
     'and write in Snowflake',
     schedule_interval='*/30 * * * *',
+    catchup=False,
 )
 
 

@@ -23,6 +23,7 @@ dag = DAG(
     description='DAG to extract product variants data '
     'from Shopify and consolidate it in Snowflake',
     schedule_interval=timedelta(days=1),
+    catchup=False,
 )
 
 

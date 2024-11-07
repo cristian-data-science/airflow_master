@@ -30,6 +30,7 @@ dag = DAG(
     description='DAG to extract processed salesline data from ERP and '
     'consolidate it in a single table in Snowflake',
     schedule_interval=timedelta(days=1),
+    catchup=False,
 )
 
 
