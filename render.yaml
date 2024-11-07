@@ -32,9 +32,6 @@ services:
         value: "task"
       - key: AIRFLOW__LOGGING__BASE_LOG_FOLDER
         value: "/opt/airflow/logs"
-    encryptedFiles:
-      - name: snowflake-key
-        path: /etc/secrets/private_key.pem
 databases:
   - name: airflow-db
     plan: standard
