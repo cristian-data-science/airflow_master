@@ -2,7 +2,7 @@ services:
   - name: airflow
     type: web
     env: docker
-    dockerfilePath: ./Dockerfile
+    dockerfilePath: ./Dockerfile-render
     plan: standard
     autoDeploy: true
     envVars:
