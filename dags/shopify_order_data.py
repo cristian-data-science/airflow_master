@@ -23,7 +23,7 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
 BATCH_LIMIT = 250
 RESPONSE_LIMIT = None
-DAYS = None
+DAYS = 2
 BATCH_SIZE = 10000
 
 # Dag definition
