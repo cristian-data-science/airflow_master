@@ -3,8 +3,8 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from dotenv import load_dotenv
-from dags.config.oms_order_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.oms_order_data_config import default_args
+from utils.utils import write_data_to_snowflake
 import os
 import requests
 from requests.exceptions import HTTPError, ChunkedEncodingError

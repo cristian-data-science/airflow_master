@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_product_variants_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.shopify_product_variants_data_config import default_args
+from utils.utils import write_data_to_snowflake
 
 
 load_dotenv()

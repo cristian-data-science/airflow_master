@@ -2,8 +2,8 @@ from datetime import timedelta, datetime, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_customer_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.shopify_customer_data_config import default_args
+from utils.utils import write_data_to_snowflake
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os

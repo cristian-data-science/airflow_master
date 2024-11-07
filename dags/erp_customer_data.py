@@ -2,8 +2,8 @@ from datetime import timedelta, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.erp_customer_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.erp_customer_data_config import default_args
+from utils.utils import write_data_to_snowflake
 import os
 import pymssql
 import pandas as pd
