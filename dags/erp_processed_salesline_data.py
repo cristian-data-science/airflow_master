@@ -285,9 +285,7 @@ def process_sales_orders(start_date, end_date):
             MAX(TAXGROUP) AS TaxGroup,
             MAX(PURCHORDERFORMNUM) AS OrderNumber
         FROM ERP_PROCESSED_SALESLINE
-        WHERE SNOWFLAKE_UPDATED_AT
-            BETWEEN '{start_date.strftime("%Y-%m-%d")}' AND
-            '{end_date.strftime("%Y-%m-%d")}'
+        WHERE SNOWFLAKE_UPDATED_AT >= '{start_date.strftime("%Y-%m-%d")}'
         GROUP BY SALESID
     ) AS source
     ON target.SALESID = source.SALESID
