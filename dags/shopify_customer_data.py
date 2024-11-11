@@ -27,7 +27,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract customer data from Shopify and ERP and '
     'consolidate it in a single table in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='0 5 * * *',
     catchup=False,
 )
 

@@ -32,7 +32,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract order data from Shopify '
     'and write in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='15 9,17 * * *',
     catchup=False,
 )
 
