@@ -21,14 +21,14 @@ SHOPIFY_API_URL = \
     os.getenv('SHOPIFY_API_URL') + os.getenv('SHOPIFY_API_VERSION') + '/'
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
-BATCH_LIMIT = 250
-RESPONSE_LIMIT = None
-DAYS = None
-BATCH_SIZE = 10000
+BATCH_LIMIT = 10
+RESPONSE_LIMIT = 10
+DAYS = 1
+BATCH_SIZE = 10
 
 # Dag definition
 dag = DAG(
-    'shopify_order_data',
+    'shopify_orders_data',
     default_args=default_args,
     description='DAG to extract order data from Shopify '
     'and write in Snowflake',
@@ -227,8 +227,15 @@ def orders_to_dataframe(orders_datalist):
         shipping_df = pd.DataFrame(shipping_addresses)
         orders_line_df = pd.DataFrame(orders_line)
 
+        print(orders_df.head().to_string())
+        print(
+            f'Creating/updating {len(orders_datalist)} orders from `Shopify.')
         print(orders_line_df.head().to_string())
-        print(f'Creating/updating {len(orders_datalist)} orders from Shopify.')
+        print(
+            f'Creating/updating {orders_line_df.shape[0]} '
+            'orders from Shopify.'
+        )
+
         return orders_df, shipping_df, orders_line_df
     else:
         print('No data received from get_shopify_orders')
@@ -291,9 +298,8 @@ def process_orders(orders_list):
         SNOWFLAKE_CONN_ID
         )
 
+
 # Task definitions
-
-
 task_1 = PythonOperator(
     task_id='get_shopify_orders',
     python_callable=run_get_shopify_orders,
