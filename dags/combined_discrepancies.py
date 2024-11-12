@@ -34,7 +34,6 @@ def check_discrepancies_and_send_combined_email(
     start_date = (
         datetime.now() - timedelta(days=interval_days)).strftime('%Y-%m-%d')
 
-    # OMS query
     query_oms = f'''
         SELECT s.*
         FROM PATAGONIA.CORE_TEST.OMS_SUBORDERS s
@@ -65,12 +64,10 @@ def check_discrepancies_and_send_combined_email(
         axis=1
     )
     df_oms_filtered = df_oms[['Número de orden', 'Fecha de creación']]
-    df_oms_filtered['Fecha de creación'] = pd.to_datetime(
-        df_oms_filtered['Fecha de creación']
-    ).sort_values(ascending=False)
+    df_oms_filtered = df_oms_filtered.sort_values(
+        by='Número de orden', ascending=False)
     oms_count = len(df_oms_filtered)
 
-    # Shopify query
     query_shopify = f'''
         SELECT s.*
         FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_COPY s
@@ -102,12 +99,10 @@ def check_discrepancies_and_send_combined_email(
         axis=1
     )
     df_shopify_filtered = df_shopify[['Número de orden', 'Fecha de creación']]
-    df_shopify_filtered['Fecha de creación'] = pd.to_datetime(
-        df_shopify_filtered['Fecha de creación']
-    ).sort_values(ascending=False)
+    df_shopify_filtered = df_shopify_filtered.sort_values(
+        by='Número de orden', ascending=False)
     shopify_count = len(df_shopify_filtered)
 
-    # Quantity discrepancy query
     query_quantity_discrepancy = '''
         SELECT shop.ORDER_ID, shop.ORDER_NAME, shop.total_cantidad_SHOPIFY,
             CAST(erp.total_cantidad_ERP AS INTEGER) AS total_cantidad_ERP
