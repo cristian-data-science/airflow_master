@@ -25,7 +25,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract incidence data from OMS '
     'and write in Snowflake',
-    schedule_interval='*/30 * * * *',
+    schedule_interval='0 9,12,15,17,19,21 * * *',
     catchup=False,
 )
 
