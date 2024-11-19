@@ -21,10 +21,10 @@ SHOPIFY_API_URL = \
     os.getenv('SHOPIFY_API_URL') + os.getenv('SHOPIFY_API_VERSION') + '/'
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
-BATCH_LIMIT = 10
-RESPONSE_LIMIT = 10
+BATCH_LIMIT = 250
+RESPONSE_LIMIT = None
 DAYS = 1
-BATCH_SIZE = 10
+BATCH_SIZE = 100
 
 # Dag definition
 dag = DAG(
@@ -217,6 +217,7 @@ def orders_to_dataframe(orders_datalist):
                 order_line_data = {
                     'ORDER_ID': order.get('id'),
                     'LINE_ITEM_ID': line.get('id'),
+                    'CREATED_AT': order.get('created_at'),
                     'ORDER_NAME': order.get('name'),
                     'SKU': line.get('sku'),
                     'QUANTITY': line.get('quantity'),

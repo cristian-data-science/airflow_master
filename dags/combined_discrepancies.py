@@ -20,7 +20,8 @@ MAX_DAYS = 7  # Maximum number of days since the order was created
 EMAILS = [
     'josefa.gonzalez@patagonia.com',
     'enrique.urrutia@patagonia.com',
-    'cesar.orostegui@patagonia.com',
+    'cesar.orostegui@patagonia.com'
+
 ]
 
 
@@ -34,6 +35,7 @@ def check_discrepancies_and_send_combined_email(
     start_date = (
         datetime.now() - timedelta(days=interval_days)).strftime('%Y-%m-%d')
 
+    # OMS query
     query_oms = f'''
         SELECT s.*
         FROM PATAGONIA.CORE_TEST.OMS_SUBORDERS s
@@ -64,10 +66,12 @@ def check_discrepancies_and_send_combined_email(
         axis=1
     )
     df_oms_filtered = df_oms[['Número de orden', 'Fecha de creación']]
-    df_oms_filtered = df_oms_filtered.sort_values(
-        by='Número de orden', ascending=False)
+    df_oms_filtered['Fecha de creación'] = pd.to_datetime(
+        df_oms_filtered['Fecha de creación']
+    ).sort_values(ascending=False)  # Ordenar en orden decreciente
     oms_count = len(df_oms_filtered)
 
+    # Shopify query
     query_shopify = f'''
         SELECT s.*
         FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_COPY s
@@ -99,42 +103,61 @@ def check_discrepancies_and_send_combined_email(
         axis=1
     )
     df_shopify_filtered = df_shopify[['Número de orden', 'Fecha de creación']]
-    df_shopify_filtered = df_shopify_filtered.sort_values(
-        by='Número de orden', ascending=False)
+    df_shopify_filtered['Fecha de creación'] = pd.to_datetime(
+        df_shopify_filtered['Fecha de creación']).sort_values(ascending=False)
     shopify_count = len(df_shopify_filtered)
 
-    query_quantity_discrepancy = '''
-        SELECT shop.ORDER_ID, shop.ORDER_NAME, shop.total_cantidad_SHOPIFY,
-            CAST(erp.total_cantidad_ERP AS INTEGER) AS total_cantidad_ERP
-        FROM (
-            SELECT s.ORDER_ID, s.ORDER_NAME, SUM(s.QUANTITY)
-            AS total_cantidad_SHOPIFY
-            FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_LINE s
-            GROUP BY s.ORDER_ID, s.ORDER_NAME
-        ) AS shop
-        LEFT JOIN (
-            SELECT s.PURCHORDERFORMNUM,
-                CAST(SUM(s.QTY) AS INTEGER) AS total_cantidad_ERP
-            FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE s
-            WHERE s.ITEMID != 'DESPACHO'
-            GROUP BY s.PURCHORDERFORMNUM
-        ) AS erp
-        ON shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM)
-        WHERE shop.total_cantidad_SHOPIFY != erp.total_cantidad_ERP
-            AND NOT (
-                erp.total_cantidad_ERP = 2 * shop.total_cantidad_SHOPIFY
-                AND EXISTS (
-                    SELECT 1
-                    FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
-                    WHERE e.PURCHORDERFORMNUM = CONCAT('NC-', shop.ORDER_NAME)
-                )
-            )
+    # Quantity discrepancy query
+    query_quantity_discrepancy = f'''
+    SELECT
+    shop.ORDER_ID,
+    shop.ORDER_NAME,
+    shop.CREATED_AT,
+    shop.total_cantidad_SHOPIFY,
+    CAST(erp.total_cantidad_ERP AS INT) AS total_cantidad_ERP
+FROM
+    (SELECT
+        s.ORDER_ID,
+        s.ORDER_NAME,
+        s.CREATED_AT,
+        SUM(s.QUANTITY) AS total_cantidad_SHOPIFY
+     FROM
+        PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_LINE s
+     WHERE
+        s.CREATED_AT >= DATEADD(DAY, -{interval_days}, CURRENT_DATE)
+     GROUP BY
+        s.ORDER_ID,
+        s.ORDER_NAME,
+        s.CREATED_AT) AS shop
+LEFT JOIN
+    (SELECT
+        s.PURCHORDERFORMNUM,
+        SUM(s.QTY) AS total_cantidad_ERP
+     FROM
+        PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE s
+     WHERE
+        s.ITEMID != 'DESPACHO'
+     GROUP BY
+        s.PURCHORDERFORMNUM) AS erp
+ON
+    shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM)
+WHERE
+    shop.total_cantidad_SHOPIFY != erp.total_cantidad_ERP
+    AND EXISTS (
+        SELECT 1
+        FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
+        WHERE e.PURCHORDERFORMNUM = CONCAT('NC-', shop.ORDER_NAME)
+    )
+ORDER BY
+    TRY_TO_NUMBER(erp.PURCHORDERFORMNUM) ASC;
     '''
     cursor.execute(query_quantity_discrepancy)
     columns_quantity = [col[0] for col in cursor.description]
     data_quantity = cursor.fetchall()
     df_quantity = pd.DataFrame(data_quantity, columns=columns_quantity)
-    df_quantity.rename(columns={'ORDER_NAME': 'Número de orden'}, inplace=True)
+    df_quantity.rename(columns={
+        'ORDER_NAME': 'Número de orden',
+        'CREATED_AT': 'Fecha de creación'}, inplace=True)
     df_quantity['Número de orden'] = df_quantity.apply(
         lambda row: (
             f'<a href="https://admin.shopify.com/store/patagoniachile/orders/'
@@ -143,16 +166,21 @@ def check_discrepancies_and_send_combined_email(
         ),
         axis=1
     )
+    print(df_quantity.columns.tolist())
     df_quantity = df_quantity.sort_values(
-        by='Número de orden', ascending=False)
+        by='Número de orden', ascending=False)  # Ordenar en orden decreciente
     quantity_count = len(df_quantity)
 
+    print(df_quantity)
     cursor.close()
     conn.close()
 
     # Alert conditions based on max_days and number_results
     now = pd.Timestamp.now()
     oms_older_than_max_days = df_oms_filtered['Fecha de creación'].apply(
+        lambda x: (now - x).days > max_days
+    ).any()
+    discrep_older_than_max_days = df_quantity['Fecha de creación'].apply(
         lambda x: (now - x).days > max_days
     ).any()
     shopify_older_than_max_days = (
@@ -165,8 +193,9 @@ def check_discrepancies_and_send_combined_email(
         len(df_quantity) >= number_results
     )
 
-    if (oms_older_than_max_days or
-            shopify_older_than_max_days or results_exceed_threshold):
+    if (oms_older_than_max_days or discrep_older_than_max_days or
+            shopify_older_than_max_days
+            or results_exceed_threshold):
         # Convert DataFrames to HTML with count summaries
         df_oms_html = (
             f'<p>Se encontraron {oms_count} resultados:</p>' +
