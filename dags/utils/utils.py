@@ -101,7 +101,8 @@ def write_data_to_snowflake(
             HAVING COUNT(*) > 1''')
         temp_duplicates = cursor.fetchall()
         if temp_duplicates:
-            duplicate_keys = ', '.join([str(dup[0]) for dup in temp_duplicates])
+            duplicate_keys = \
+                ', '.join([str(dup[0]) for dup in temp_duplicates])
             print(f'Duplicates keys: {duplicate_keys}')
             print(f'SELECT * FROM {temporary_table_name} '
                   f'WHERE {primary_key_columns} IN ({duplicate_keys})')
@@ -229,3 +230,29 @@ def fetch_data_from_snowflake(
     cursor.close()
     conn.close()
     return ids_data_list
+
+
+def truncate_table(table_name, snowflake_conn_id):
+    '''
+    Truncates a specified table in Snowflake.
+
+    Parameters:
+    - table_name (str): Name of the table to truncate.
+    - snowflake_conn_id (str): Airflow connection ID for Snowflake.
+
+    This function uses the SnowflakeHook from Airflow to connect to Snowflake
+    and executes the TRUNCATE TABLE command on the specified table.
+    '''
+    # Use the SnowflakeHook to get a connection object
+    hook = SnowflakeHook(snowflake_conn_id=snowflake_conn_id)
+    conn = hook.get_conn()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"TRUNCATE TABLE {table_name};")
+        print(f"Table {table_name} truncated successfully.")
+    except Exception as e:
+        print(f"Error while truncating table {table_name}: {e}")
+        raise e
+    finally:
+        cursor.close()
+        conn.close()
