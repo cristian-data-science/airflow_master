@@ -8,7 +8,7 @@ from datetime import timedelta, datetime, timezone
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.klaviyo_retail_sales_loading_config import default_args
+from config.klaviyo_retail_sales_loading_config import default_args
 
 
 load_dotenv()
