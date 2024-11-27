@@ -245,9 +245,7 @@ dag = DAG(
     default_args=default_args,
     description=(
         'DAG que revisa discrepancias entre OMS, Shopify y ERP'),
-    schedule_interval='0 0 * * *',
-    start_date=days_ago(1),
-    catchup=False,
+    schedule_interval='0 10 * * *',
 )
 
 t1 = PythonOperator(
