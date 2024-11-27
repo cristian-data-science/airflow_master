@@ -295,7 +295,7 @@ def process_orders(orders_list):
         orders_line_dataframe,
         'SHOPIFY_ORDERS_LINE',
         default_args['snowflake_shopify_orders_line_table_columns'],
-        'LINE_ITEM_ID',
+        ['LINE_ITEM_ID'],
         'TEMP_SHOPIFY_ORDERS_LINE',
         SNOWFLAKE_CONN_ID
         )
