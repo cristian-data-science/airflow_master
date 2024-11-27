@@ -54,5 +54,12 @@ default_args = {
         ('LONGITUDE', 'FLOAT'),
         ('ACCEPTS_MARKETING', 'BOOLEAN'),
         ('MARKETING_OPT_IN_LEVEL', 'VARCHAR(255)')
-    ]
-}
+    ],
+    'snowflake_shopify_orders_line_table_columns': [
+        ('ORDER_ID', 'INT'),
+        ('LINE_ITEM_ID', 'VARCHAR(255)'),
+        ('CREATED_AT', 'TIMESTAMP_NTZ'),
+        ('ORDER_NAME', 'VARCHAR(255)'),
+        ('SKU', 'VARCHAR(255)'),
+        ('QUANTITY', 'VARCHAR(255)')
+    ]}
