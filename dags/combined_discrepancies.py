@@ -2,7 +2,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.operators.email import EmailOperator
-from airflow.utils.dates import days_ago
 from dags.config.combined_discrepancies_config import default_args
 import os
 import pandas as pd
