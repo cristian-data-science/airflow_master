@@ -2,8 +2,8 @@ from datetime import timedelta, datetime, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_order_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.shopify_order_data_config import default_args
+from utils.utils import write_data_to_snowflake
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os
@@ -23,8 +23,8 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
 BATCH_LIMIT = 250
 RESPONSE_LIMIT = None
-DAYS = 1
-BATCH_SIZE = 100
+DAYS = 2
+BATCH_SIZE = 10000
 
 # Dag definition
 dag = DAG(
@@ -32,7 +32,8 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract order data from Shopify '
     'and write in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='0 9,17 * * *',
+    catchup=False,
 )
 
 
@@ -294,7 +295,7 @@ def process_orders(orders_list):
         orders_line_dataframe,
         'SHOPIFY_ORDERS_LINE',
         default_args['snowflake_shopify_orders_line_table_columns'],
-        'LINE_ITEM_ID',
+        ['LINE_ITEM_ID'],
         'TEMP_SHOPIFY_ORDERS_LINE',
         SNOWFLAKE_CONN_ID
         )

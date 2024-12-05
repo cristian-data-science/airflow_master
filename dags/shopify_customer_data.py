@@ -2,8 +2,8 @@ from datetime import timedelta, datetime, date
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_customer_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.shopify_customer_data_config import default_args
+from utils.utils import write_data_to_snowflake
 from requests.auth import HTTPBasicAuth
 from urllib.parse import urljoin
 import os
@@ -27,7 +27,8 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract customer data from Shopify and ERP and '
     'consolidate it in a single table in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='0 5 * * *',
+    catchup=False,
 )
 
 
@@ -161,6 +162,14 @@ def customers_to_dataframe(customers_datalist):
     rows of the DataFrame for review and returns the processed DataFrame.
     '''
     if customers_datalist is not None:
+        for customer in customers_datalist:
+            consent = customer.get('email_marketing_consent', {})
+            customer['accepts_marketing'] = \
+                consent.get('state', None)
+            customer['accepts_marketing_updated_at'] = \
+                consent.get('consent_updated_at', None)
+            customer['marketing_opt_in_level'] = \
+                consent.get('opt_in_level', None)
         df = pd.DataFrame(customers_datalist)
         df = df.rename(columns={
             'id': 'SHOPIFY_ID',
@@ -239,7 +248,7 @@ def process_customers(customers_list):
         customers_merged_df,
         'SHOPIFY_CUSTOMERS',
         default_args['snowflake_shopify_customer_table_columns'],
-        'SHOPIFY_ID',
+        ['SHOPIFY_ID'],
         'TEMP_SHOPIFY_CUSTOMERS',
         SNOWFLAKE_CONN_ID
     )
@@ -248,7 +257,7 @@ def process_customers(customers_list):
         addresses_df,
         'SHOPIFY_CUSTOMER_ADDRESSES',
         default_args['snowflake_shopify_customer_addresses_table_columns'],
-        'SHOPIFY_ID',
+        ['SHOPIFY_ID'],
         'TEMP_SHOPIFY_CUSTOMER_ADDRESSES',
         SNOWFLAKE_CONN_ID
     )

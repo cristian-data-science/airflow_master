@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
-from dags.config.shopify_product_variants_data_config import default_args
-from dags.utils.utils import write_data_to_snowflake
+from config.shopify_product_variants_data_config import default_args
+from utils.utils import write_data_to_snowflake
 
 
 load_dotenv()
@@ -22,7 +22,8 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract product variants data '
     'from Shopify and consolidate it in Snowflake',
-    schedule_interval=timedelta(days=1),
+    schedule_interval='0 11 * * *',
+    catchup=False,
 )
 
 
@@ -181,7 +182,7 @@ def run_get_shopify_product_variants(**context):
             variants_df,
             'SHOPIFY_PRODUCT_VARIANTS2',
             default_args['snowflake_shopify_product_variants_table_columns'],
-            'VARIANT_ID',
+            ['VARIANT_ID'],
             'TEMP_SHOPIFY_PRODUCT_VARIANTS2',
             SNOWFLAKE_CONN_ID
         )

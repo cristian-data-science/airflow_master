@@ -14,7 +14,7 @@ default_args = {
     'snowflake_shopify_customer_table_columns': [
         ('SHOPIFY_ID', 'NUMBER'),
         ('EMAIL', 'VARCHAR(255)'),
-        ('ACCEPTS_MARKETING', 'BOOLEAN'),
+        ('ACCEPTS_MARKETING', 'VARCHAR(50)'),
         ('ACCEPTS_MARKETING_UPDATED_AT', 'TIMESTAMP_NTZ'),
         ('ADMIN_GRAPHQL_API_ID', 'VARCHAR(255)'),
         ('CREATED_AT', 'TIMESTAMP_NTZ'),

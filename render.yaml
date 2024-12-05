@@ -1,0 +1,37 @@
+services:
+  - name: airflow
+    type: web
+    env: docker
+    dockerfilePath: ./Dockerfile-render
+    plan: standard
+    autoDeploy: true
+    envVars:
+      - key: AIRFLOW__CORE__FERNET_KEY
+        sync: false
+      - key: AIRFLOW_ADMIN_USER
+        sync: false
+      - key: AIRFLOW_ADMIN_PASSWORD
+        sync: false
+      - key: AIRFLOW__WEBSERVER__AUTHENTICATE
+        value: "True"
+      - key: AIRFLOW__WEBSERVER__AUTH_BACKEND
+        value: "airflow.contrib.auth.backends.password_auth"
+      - key: AIRFLOW__WEBSERVER__SECRET_KEY
+        sync: false
+      - key: AIRFLOW__WEBSERVER__RBAC
+        value: "True"
+      - key: AIRFLOW__CORE__EXECUTOR
+        value: "LocalExecutor"
+      - key: AIRFLOW__CORE__SQL_ALCHEMY_CONN
+        fromDatabase:
+          name: airflow-db
+          property: connectionString
+      - key: AIRFLOW__LOGGING__REMOTE_LOGGING
+        value: "False"
+      - key: AIRFLOW__LOGGING__TASK_LOG_READER
+        value: "task"
+      - key: AIRFLOW__LOGGING__BASE_LOG_FOLDER
+        value: "/opt/airflow/logs"
+databases:
+  - name: airflow-db
+    plan: standard

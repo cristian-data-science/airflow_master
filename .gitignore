@@ -2,3 +2,6 @@ logs
 dags/**/*.env_dags
 .env
 __pycache__/
+venv
+.enY
+.DS_STORE
