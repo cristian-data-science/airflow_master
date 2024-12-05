@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
 from config.erp_inventory_data_config import default_args
-from utils.utils import write_data_to_snowflake
+from utils.utils import write_data_to_snowflake, truncate_table
 import os
 import pymssql
 import pandas as pd
@@ -142,6 +142,7 @@ def run_get_inventory_data(**context):
             SNOWFLAKE_CONN_ID
         )
 
+        truncate_table('ERP_INVENTORY', SNOWFLAKE_CONN_ID)
         write_data_to_snowflake(
             df_inventory,
             'ERP_INVENTORY',
@@ -165,6 +166,8 @@ def run_get_wms_inventory_data(**context):
             'TEMP_WMS_INVENTORY_HISTORY',
             SNOWFLAKE_CONN_ID
         )
+
+        truncate_table('WMS_INVENTORY', SNOWFLAKE_CONN_ID)
         write_data_to_snowflake(
             df_wms,
             'WMS_INVENTORY',
