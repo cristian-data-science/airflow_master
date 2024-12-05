@@ -44,6 +44,7 @@ def check_discrepancies_and_send_combined_email(
             AND e.SALESPOOLID LIKE 'ECOM'
         WHERE e.PURCHORDERFORMNUM IS NULL
             AND s.ORDER_DATE >= '{start_date}'
+        ORDER BY s.ORDER_DATE ASC;
     '''
     cursor.execute(query_oms)
     columns_oms = [col[0] for col in cursor.description]
@@ -82,6 +83,7 @@ def check_discrepancies_and_send_combined_email(
             AND s.PROCESSED_AT > CURRENT_TIMESTAMP -
             INTERVAL '{interval_days} DAYS'
             AND s.FINANCIAL_STATUS = 'paid'
+        ORDER BY s.NAME ASC;
     '''
     cursor.execute(query_shopify)
     columns_shopify = [col[0] for col in cursor.description]
@@ -143,10 +145,15 @@ ON
     shop.ORDER_NAME = TRY_TO_NUMBER(erp.PURCHORDERFORMNUM)
 WHERE
     shop.total_cantidad_SHOPIFY != erp.total_cantidad_ERP
-    AND EXISTS (
+    AND NOT EXISTS (
         SELECT 1
         FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
         WHERE e.PURCHORDERFORMNUM = CONCAT('NC-', shop.ORDER_NAME)
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
+        WHERE e.PURCHORDERFORMNUM = CONCAT(shop.ORDER_NAME, '1')
     )
 ORDER BY
     TRY_TO_NUMBER(erp.PURCHORDERFORMNUM) ASC;
