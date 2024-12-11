@@ -19,8 +19,9 @@ MAX_DAYS = 7  # Maximum number of days since the order was created
 EMAILS = [
     'josefa.gonzalez@patagonia.com',
     'enrique.urrutia@patagonia.com',
-    'cesar.orostegui@patagonia.com'
-
+    'cesar.orostegui@patagonia.com',
+    'clemente.videla@patagonia.com',
+    'nicole.parra@patagonia.com'
 ]
 
 
