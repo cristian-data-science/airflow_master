@@ -1,6 +1,5 @@
 import os
 import requests
-import json
 import pytz
 import pandas as pd
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
@@ -21,9 +20,9 @@ KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
 KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
 
-START_DATE = '2024-05-01'
-END_DATE = '2024-05-31'
-CUSTOMER_ACCOUNT = None  # None to process all customers
+START_DATE = '2024-07-01'
+END_DATE = '2024-08-31'
+CUSTOMER_ACCOUNT = '18855833-k'  # None to process all customers
 AVOID_RUTS = ['55555555-5', '66666666-6', '22222222-2']
 
 customer_updated_count = 0
@@ -84,13 +83,13 @@ def get_retail_sales(
         ON sl.CUSTACCOUNT = ec.CUSTOMERACCOUNT
     LEFT JOIN latest_shopify_address so
         ON sl.CUSTACCOUNT = so.CUSTOMER_ID
-    WHERE DATE(sl.INVOICEDATE) 
+    WHERE DATE(sl.INVOICEDATE)
             BETWEEN '{start_date}' AND '{end_date}'
         AND sl.CECO = 'Retail'
     """
 
     if cust_account:
-        query += f" AND CUSTACCOUNT = '{cust_account}'"
+        query += f" AND UPPER(CUSTACCOUNT) = UPPER('{cust_account}')"
     else:
         avoid_ruts_str = ', '.join([f"'{rut}'" for rut in AVOID_RUTS])
         query += f" AND CUSTACCOUNT NOT IN ({avoid_ruts_str})"
@@ -445,8 +444,7 @@ def create_klaviyo_json_list(customer, show_location_info=False):
                     "$first_name": first_name,
                     "$last_name": last_name,
                     "$email": customer['customer_email'],
-                    "$organization": customer['customer_RUT'],
-                    "Accepts Marketing": customer['accepts_marketing']
+                    "$organization": customer['customer_RUT']
 
                 },
                 "time": transaction_date,
@@ -463,8 +461,6 @@ def create_klaviyo_json_list(customer, show_location_info=False):
                     "Source Name": "retail",
                     "extra": {
                         "id": sale_id,
-                        "buyer_accepts_marketing": customer[
-                            'accepts_marketing'],
                         "company": None,
                         "confirmation_number": "",
                         "contact_email": customer['customer_email'],
