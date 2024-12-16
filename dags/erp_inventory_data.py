@@ -15,7 +15,7 @@ requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 load_dotenv()
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 BYOD_SERVER = os.getenv('BYOD_SERVER')
-BYOD_DATABASE = os.getenv('BYOD_DATABASE')
+BYOD_DATABASE = 'PRODUCTS'
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
 WMS_API_URL = os.getenv('WMS_API_URL')
