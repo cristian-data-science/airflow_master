@@ -15,6 +15,11 @@ ERP_CLIENT_ID = os.getenv('ERP_CLIENT_ID')
 ERP_CLIENT_SECRET = os.getenv('ERP_CLIENT_SECRET')
 
 
+# Get current UTC date
+fecha_actual = datetime.utcnow()
+fecha_formateada = fecha_actual.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def get_dollar_value():
     """
     Obtains the current dollar value from the mindicador.cl API.
@@ -30,7 +35,7 @@ def get_dollar_value():
         raise
 
 
-def write_exchange_rate_to_erp(dollar_value):
+def write_exchange_rate_to_erp(dollar_value, type):
     """
     Loads the exchange rate (USD to CLP) to the ERP using the obtained value.
     """
@@ -64,11 +69,6 @@ def write_exchange_rate_to_erp(dollar_value):
         print(f"Error during authentication: {e}")
         raise
 
-    # Get current UTC date
-    fecha_actual = datetime.utcnow()
-    fecha_formateada = fecha_actual.strftime("%Y-%m-%dT%H:%M:%SZ")
-    print(f"Formatted date: {fecha_formateada}")
-
     # Prepare data to send to ERP
     exchange_url = f'{ERP_URL}/data/ExchangeRates'
     headers = {
@@ -76,7 +76,7 @@ def write_exchange_rate_to_erp(dollar_value):
         'Authorization': f'Bearer {access_token}'
     }
     exchange_data = {
-        "RateTypeName": "Predeterminado",
+        "RateTypeName": type,
         "FromCurrency": "USD",
         "ToCurrency": "CLP",
         "StartDate": fecha_formateada,
@@ -102,10 +102,24 @@ def write_exchange_rate_to_erp(dollar_value):
         raise
 
 
-def execute_exchange_rate_tasks():
+last_day = ["01-31", "02-28", "03-31", "04-30", "05-31", "06-30", "07-31",
+            "08-31", "09-30", "10-31", "11-30", "12-31"]
 
+
+def execute_exchange_rate_tasks():
+    count = 0
     last_dollar_value = get_dollar_value()
-    write_exchange_rate_to_erp(last_dollar_value)
+    write_exchange_rate_to_erp(last_dollar_value, "Predeterminado")
+    write_exchange_rate_to_erp(last_dollar_value, "Tienda")
+    print(f"Formatted date: {fecha_formateada}")
+    for c in last_day:
+        if c in fecha_formateada:
+            write_exchange_rate_to_erp(last_dollar_value, "Cierre")
+            count += 1
+    if count == 1:
+        print("es el último día del mes")
+    else:
+        print("no es el último día del mes")
 
 
 # DAG configuration
