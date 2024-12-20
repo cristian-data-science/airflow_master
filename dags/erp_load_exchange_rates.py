@@ -107,19 +107,70 @@ last_day = ["01-31", "02-28", "03-31", "04-30", "05-31", "06-30", "07-31",
 
 
 def execute_exchange_rate_tasks():
+
     count = 0
-    last_dollar_value = get_dollar_value()
-    write_exchange_rate_to_erp(last_dollar_value, "Predeterminado")
-    write_exchange_rate_to_erp(last_dollar_value, "Tienda")
-    print(f"Formatted date: {fecha_formateada}")
-    for c in last_day:
-        if c in fecha_formateada:
-            write_exchange_rate_to_erp(last_dollar_value, "Cierre")
-            count += 1
-    if count == 1:
-        print("es el último día del mes")
+    errors = []  # Lista para recopilar errores
+
+    try:
+        # Obtener el valor del dólar
+        last_dollar_value = get_dollar_value()
+    except Exception as e:
+        error_msg = f"Error al obtener el valor del dólar: {str(e)}"
+        print(error_msg)
+        errors.append(error_msg)
+        last_dollar_value = None  # Valor por defecto en caso de error
+
+    if last_dollar_value is not None:
+        try:
+            # Subir el tipo de cambio predeterminado al ERP
+            write_exchange_rate_to_erp(last_dollar_value, "Predeterminado")
+        except Exception as e:
+            error_msg = (
+                "Error al subir tipo de cambio"
+                f"'Predeterminado' al ERP: {str(e)}"
+            )
+            print(error_msg)
+            errors.append(error_msg)
+
+        try:
+            # Subir el tipo de cambio de tienda al ERP
+            write_exchange_rate_to_erp(last_dollar_value, "Tienda")
+        except Exception as e:
+            error_msg = (
+                f"Error al subir tipo de cambio 'Tienda' al ERP: {str(e)}"
+            )
+            print(error_msg)
+            errors.append(error_msg)
+
+        try:
+            # Revisar si es el último día del mes
+            # y subir tipo de cambio 'Cierre'
+            for c in last_day:
+                if c in fecha_formateada:
+                    write_exchange_rate_to_erp(last_dollar_value, "Cierre")
+                    count += 1
+            if count == 1:
+                print("Es el último día del mes.")
+            else:
+                print("No es el último día del mes.")
+        except Exception as e:
+            error_msg = (
+                "Error al verificar último día del mes o subir tipo de cambio"
+                f"'Cierre': {str(e)}"
+            )
+            print(error_msg)
+            errors.append(error_msg)
     else:
-        print("no es el último día del mes")
+        print(
+            "No se pudo obtener el valor del dólar,"
+            "no se realizan cargas al ERP.")
+
+    print(f"Fecha formateada: {fecha_formateada}")
+
+    # Si hubo errores, lanzar una excepción con detalles de cada error
+    if errors:
+        error_details = "\n".join(errors)  # Detallar cada error en una línea
+        raise Exception(f"Errores durante la ejecución:\n{error_details}")
 
 
 # DAG configuration
