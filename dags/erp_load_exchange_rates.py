@@ -168,7 +168,6 @@ with DAG(
     description=(
         'DAG that retrieves the dollar value and uploads it to the ERP'),
     schedule_interval='0 10 * * *',
-    start_date=datetime(2024, 1, 1),
     catchup=False
 ) as dag:
 

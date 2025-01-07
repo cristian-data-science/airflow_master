@@ -4,7 +4,7 @@ from datetime import timedelta, datetime
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
-    'start_date': datetime(2024, 12, 16, 5, 0),
+    'start_date': datetime(2025, 1, 1, 5, 0),
     'email': ['enrique.urrutia@patagonia.com'],
     'phone': 0,
     'email_on_failure': False,
