@@ -1,7 +1,7 @@
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from datetime import datetime
-from dags.config.erp_load_exchange_rates_config import default_args
+from config.erp_load_exchange_rates_config import default_args
 import os
 import requests
 from dotenv import load_dotenv
