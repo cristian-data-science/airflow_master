@@ -89,7 +89,7 @@ def write_exchange_rate_to_erp(dollar_value, type):
         response = requests.post(
             exchange_url, headers=headers, json=exchange_data)
         if response.status_code == 201:
-            print("Information successfully written to the ERP.")
+            print(f"Information successfully written to the ERP: {type}")
         else:
             error_msg = (
                 f"Error writing to ERP: {response.status_code}"
@@ -107,8 +107,9 @@ last_day = ["01-31", "02-28", "03-31", "04-30", "05-31", "06-30", "07-31",
 
 
 def execute_exchange_rate_tasks():
-
-    count = 0
+    """
+    Executes the tasks to obtain the dollar value and upload it to the ERP.
+    """
     errors = []
     try:
         last_dollar_value = get_dollar_value()
@@ -140,12 +141,8 @@ def execute_exchange_rate_tasks():
         try:
             for c in last_day:
                 if c in fecha_formateada:
+                    print("Es el último día del mes.")
                     write_exchange_rate_to_erp(last_dollar_value, "Cierre")
-                    count += 1
-            if count == 1:
-                print("Es el último día del mes.")
-            else:
-                print("No es el último día del mes.")
         except Exception as e:
             error_msg = (
                 "Error al verificar último día del mes o subir tipo de cambio"
