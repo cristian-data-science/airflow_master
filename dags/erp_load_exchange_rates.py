@@ -16,8 +16,8 @@ ERP_CLIENT_SECRET = os.getenv('ERP_CLIENT_SECRET')
 
 
 # Get current UTC date
-fecha_actual = datetime.utcnow()
-fecha_formateada = fecha_actual.strftime("%Y-%m-%dT%H:%M:%SZ")
+actual_date = datetime.utcnow()
+formatted_date = actual_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def get_dollar_value():
@@ -79,7 +79,7 @@ def write_exchange_rate_to_erp(dollar_value, type):
         "RateTypeName": type,
         "FromCurrency": "USD",
         "ToCurrency": "CLP",
-        "StartDate": fecha_formateada,
+        "StartDate": formatted_date,
         "Rate": dollar_value,
         "ConversionFactor": "One",
         "RateTypeDescription": "Tipo de cambio creado desde API"
@@ -140,7 +140,7 @@ def execute_exchange_rate_tasks():
 
         try:
             for c in last_day:
-                if c in fecha_formateada:
+                if c in formatted_date:
                     print("Es el último día del mes.")
                     write_exchange_rate_to_erp(last_dollar_value, "Cierre")
         except Exception as e:
@@ -155,7 +155,7 @@ def execute_exchange_rate_tasks():
             "No se pudo obtener el valor del dólar,"
             "no se realizan cargas al ERP.")
 
-    print(f"Fecha formateada: {fecha_formateada}")
+    print(f"Fecha formateada: {formatted_date}")
     if errors:
         error_details = "\n".join(errors)
         raise Exception(f"Errores durante la ejecución:\n{error_details}")
