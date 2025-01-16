@@ -60,7 +60,6 @@ def write_exchange_rate_to_erp(dollar_value, type):
             token_url, data=token_data, headers=token_headers)
         if response.status_code == 200:
             access_token = response.json().get('access_token')
-            print("Access Token:", access_token)
         else:
             raise Exception(
                 f"Error obtaining token:{response.status_code}"
