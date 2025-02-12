@@ -17,6 +17,10 @@ ERP_TOKEN_URL = os.getenv('ERP_TOKEN_URL')
 ERP_CLIENT_ID = os.getenv('ERP_CLIENT_ID')
 ERP_CLIENT_SECRET = os.getenv('ERP_CLIENT_SECRET')
 
+BATCH_SIZE_FETCH = 10000
+BATCH_SIZE_WRITE = 100000
+MAX_RECORDS_LIMIT = 120000
+
 
 def get_erp_token():
     """
@@ -62,6 +66,8 @@ def fetch_sales_price_agreements_chunk(access_token, skip=0, top=10000):
     }
 
     try:
+        print("[INFO] Fetching chunk from "
+              f"SalesPriceAgreements at skip={skip}")
         response = requests.get(endpoint, headers=headers)
         response.raise_for_status()
         data = response.json()
@@ -116,51 +122,113 @@ def fetch_and_load_pricelist_data():
     """
     Main function to:
       1. Obtain an access token.
-      2. Paginate the SalesPriceAgreements endpoint in batches of 10,000.
-      3. For each chunk, process the data and use write_data_to_snowflake
-         to upsert into the final Snowflake table.
+      2. Paginate the SalesPriceAgreements endpoint in batches of
+      `BATCH_SIZE_FETCH`.
+      3. Accumulate records in memory. Once `batch_size_write` is
+      reached (or exceeded),
+         write to Snowflake using `write_data_to_snowflake`.
+      4. If `max_records_limit` is set (not None), stop once that
+      many total records
+         have been processed.
     """
     print("[START] fetch_and_load_pricelist_data")
 
     access_token = get_erp_token()
     print("[INFO] Successfully retrieved token.")
 
-    skip = 0
-    batch_size = 10000
-
-    # We'll assume 'RecordId' is the unique primary key
+    # We'll assume these columns are the primary key when merging
     primary_keys = [
-        'ItemNumber', 'ProductColorId', 'ProductSizeId',
-        'ProductStyleId', 'ProductconfigurationId', 'PriceCustomerGroupCode'
+        'ItemNumber',
+        'ProductColorId',
+        'ProductSizeId',
+        'ProductStyleId',
+        'ProductconfigurationId',
+        'PriceCustomerGroupCode'
     ]
+
+    skip = 0
+    total_processed = 0
+
+    # Accumulated data
+    accumulated_dfs = []
+    accumulated_count = 0
 
     while True:
         df_chunk, next_link = fetch_sales_price_agreements_chunk(
-            access_token, skip=skip, top=batch_size
+            access_token, skip=skip, top=BATCH_SIZE_FETCH
         )
         if df_chunk is None or df_chunk.empty:
             print(f"[INFO] No records at skip={skip}. Pagination ends.")
             break
 
-        print(f"[INFO] Retrieved {len(df_chunk)} records at skip={skip}.")
-        df_chunk = process_sales_price_agreements_df(df_chunk)
+        # If there's a limit, check if adding this chunk would exceed it
+        chunk_size = len(df_chunk)
+        if MAX_RECORDS_LIMIT is not None:
+            if total_processed >= MAX_RECORDS_LIMIT:
+                # We've already processed the limit
+                print("[INFO] max_records_limit reached. Stopping.")
+                break
+            elif total_processed + chunk_size > MAX_RECORDS_LIMIT:
+                # Partial chunk scenario
+                allowed_size = MAX_RECORDS_LIMIT - total_processed
+                df_chunk = df_chunk.iloc[:allowed_size]
+                chunk_size = len(df_chunk)
+                print(f"[INFO] Taking only {chunk_size} rows from this chunk "
+                      f"due to MAX_RECORDS_LIMIT.")
+                # After slicing, we won't fetch more pages
+                next_link = None  # We can forcibly end pagination
 
-        if not df_chunk.empty:
-            # Upsert this chunk into Snowflake
+        # Process chunk
+        df_chunk = process_sales_price_agreements_df(df_chunk)
+        chunk_size = len(df_chunk)  # re-check length after processing
+        if chunk_size == 0:
+            # If it's empty after a partial slice or processing
+            print("[INFO] No valid rows left after partial slice or cleaning.")
+            break
+
+        # Accumulate in memory
+        accumulated_dfs.append(df_chunk)
+        accumulated_count += chunk_size
+        total_processed += chunk_size
+        skip += BATCH_SIZE_FETCH
+
+        # Check if we reached or exceeded the write threshold
+        if accumulated_count >= BATCH_SIZE_WRITE:
+            df_to_write = pd.concat(accumulated_dfs, ignore_index=True)
+            print(f"[INFO] Writing {len(df_to_write)} accumulated "
+                  "records to Snowflake.")
             write_data_to_snowflake(
-                df_chunk,
+                df_to_write,
                 'ERP_PRODUCTS_PRICELIST',
                 default_args['snowflake_erp_pricelist_table_columns'],
                 primary_keys,
                 'TEMP_ERP_PRODUCTS_PRICELIST',
                 SNOWFLAKE_CONN_ID
             )
+            # Reset accumulators
+            accumulated_dfs = []
+            accumulated_count = 0
 
-        skip += batch_size
+        # Check pagination stopping condition
         if not next_link:
-            # No further data
-            print("[INFO] No nextLink found. Pagination completed.")
+            print("[INFO] No nextLink found or partial chunk used. "
+                  "Pagination completed.")
             break
+
+    # After exiting the loop, write any leftover records
+    if accumulated_dfs:
+        df_remaining = pd.concat(accumulated_dfs, ignore_index=True)
+        if not df_remaining.empty:
+            print(f"[INFO] Writing remaining {len(df_remaining)} "
+                  "records to Snowflake.")
+            write_data_to_snowflake(
+                df_remaining,
+                'ERP_PRODUCTS_PRICELIST',
+                default_args['snowflake_erp_pricelist_table_columns'],
+                primary_keys,
+                'TEMP_ERP_PRODUCTS_PRICELIST',
+                SNOWFLAKE_CONN_ID
+            )
 
     print("[END] Data upserted into the final Snowflake table.")
 
