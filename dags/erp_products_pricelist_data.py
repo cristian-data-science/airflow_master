@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 from config.erp_products_pricelist_data_config import default_args
 import os
 import requests
+import json
+import time
 import pandas as pd
 from utils.utils import write_data_to_snowflake
 
@@ -20,7 +22,8 @@ ERP_CLIENT_SECRET = os.getenv('ERP_CLIENT_SECRET')
 # Constants for batching logic
 BATCH_SIZE_FETCH = 10000
 BATCH_SIZE_WRITE = 100000
-MAX_RECORDS_LIMIT = 120000
+MAX_RECORDS_LIMIT = None
+SKIP = 0
 
 
 def get_erp_token():
@@ -50,7 +53,8 @@ def get_erp_token():
                         f"- {response.text}")
 
 
-def fetch_sales_price_agreements_chunk(access_token, skip=0, top=10000):
+def fetch_sales_price_agreements_chunk(
+        access_token, skip=0, top=10000, max_retries=3):
     """
     Performs a GET request to the SalesPriceAgreements endpoint to retrieve
     a batch of records, using $skip and $top for pagination.
@@ -66,23 +70,36 @@ def fetch_sales_price_agreements_chunk(access_token, skip=0, top=10000):
         'Content-Type': 'application/json'
     }
 
-    try:
-        print("[INFO] Fetching chunk from SalesPriceAgreements "
-              f"at skip={skip}")
-        response = requests.get(endpoint, headers=headers)
-        response.raise_for_status()
-        data = response.json()
+    attempt = 0
+    while attempt < max_retries:
+        try:
+            print(f"[INFO] Fetching chunk from skip={skip} "
+                  f"(attempt={attempt+1})")
+            response = requests.get(endpoint, headers=headers)
+            response.raise_for_status()
 
-        # Convert the response "value" to a DataFrame
-        records = data.get('value', [])
-        df = pd.DataFrame(records)
+            # Try parsing JSON
+            try:
+                data = response.json()
+                records = data.get('value', [])
+                df = pd.DataFrame(records)
+                next_link = data.get('@odata.nextLink', None)
+                return df, next_link
+            except json.JSONDecodeError as jde:
+                print(f"[WARN] JSONDecodeError on attempt {attempt+1}: {jde}")
+                # Optionally print partial response or do something else
+                attempt += 1
+                time.sleep(5)  # backoff
+                continue  # retry
 
-        next_link = data.get('@odata.nextLink', None)
-        return df, next_link
+        except Exception as e:
+            print(f"[ERROR] Error fetching chunk: {e}")
+            attempt += 1
+            time.sleep(5)
 
-    except Exception as e:
-        print(f"Error fetching chunk from SalesPriceAgreements: {e}")
-        raise
+    # If we exhausted retries, raise an exception
+    raise Exception(f"Failed to fetch chunk at skip={skip} "
+                    f"after {max_retries} retries due to JSON errors.")
 
 
 def process_sales_price_agreements_df(df):
@@ -97,21 +114,24 @@ def process_sales_price_agreements_df(df):
     cols_to_exclude = ['@odata.etag', 'dataAreaId']
     df.drop(columns=cols_to_exclude, inplace=True, errors='ignore')
 
+    # Rename all columns to uppercase
+    df.columns = [col.upper() for col in df.columns]
+
     # Convert date columns to datetime
-    date_cols = ['PriceApplicableFromDate', 'PriceApplicableToDate']
+    date_cols = ['PRICEAPPLICABLEFROMDATE', 'PRICEAPPLICABLETODATE']
     for col in date_cols:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors='coerce')
 
     # Convert numeric columns
     numeric_cols = [
-        'RecordId',
-        'SalesPriceQuantity',
-        'ToQuantity',
-        'FixedPriceCharges',
-        'SalesLeadTimeDays',
-        'FromQuantity',
-        'Price'
+        'RECORDID',
+        'SALESPRICEQUANTITY',
+        'TOQUANTITY',
+        'FIXEDPRICECHARGES',
+        'SALESLEADTIMEDAYS',
+        'FROMQUANTITY',
+        'PRICE'
     ]
     for col in numeric_cols:
         if col in df.columns:
@@ -143,15 +163,10 @@ def fetch_and_load_pricelist_data():
 
     # We'll assume these columns are the primary key when merging
     primary_keys = [
-        'ItemNumber',
-        'ProductColorId',
-        'ProductSizeId',
-        'ProductStyleId',
-        'ProductconfigurationId',
-        'PriceCustomerGroupCode'
+        'RECORDID'
     ]
 
-    skip = 0
+    skip = SKIP
     total_processed = 0
 
     # Accumulated data
@@ -183,6 +198,10 @@ def fetch_and_load_pricelist_data():
 
         # Process chunk
         df_chunk = process_sales_price_agreements_df(df_chunk)
+        print("[INFO] SalesPriceAgreements DataFrame to load.")
+        print(f"[INFO] Initial shape: {df_chunk.shape}")
+        print(df_chunk.head())
+
         chunk_size = len(df_chunk)  # recalc after processing
         if chunk_size == 0:
             print("[INFO] No valid rows after partial slice or cleaning.")
