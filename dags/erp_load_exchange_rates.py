@@ -20,24 +20,25 @@ actual_date = datetime.utcnow()
 formatted_date = actual_date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def get_dollar_value():
+def get_exchange_value(exchange_name):
     """
-    Obtains the current dollar value from the mindicador.cl API.
+    Obtains the current exchange value from the mindicador.cl API.
     """
     try:
-        resp = requests.get("https://mindicador.cl/api/dolar")
+        resp = requests.get(f"https://mindicador.cl/api/{exchange_name}")
         data = resp.json()
-        last_dollar_value = data['serie'][0]['valor']
-        print(f"The last dollar value is: {last_dollar_value}")
-        return last_dollar_value
+        print(f"Data obtained from the API: {data}")
+        last_exchange_value = data['serie'][0]['valor']
+        print(f"The last {exchange_name} value is: {last_exchange_value}")
+        return last_exchange_value
     except Exception as e:
-        print(f"Error obtaining the dollar value: {e}")
+        print(f"Error obtaining the {exchange_name} value: {e}")
         raise
 
 
-def write_exchange_rate_to_erp(dollar_value, type):
+def write_exchange_rate_to_erp(exchange_value, exchange_code, type):
     """
-    Loads the exchange rate (USD to CLP) to the ERP using the obtained value.
+    Loads the exchange rate to the ERP using the obtained value.
     """
 
     # Validate that all required variables are defined
@@ -76,19 +77,19 @@ def write_exchange_rate_to_erp(dollar_value, type):
     }
     exchange_data = {
         "RateTypeName": type,
-        "FromCurrency": "USD",
+        "FromCurrency": exchange_code,
         "ToCurrency": "CLP",
         "StartDate": formatted_date,
-        "Rate": dollar_value,
+        "Rate": exchange_value,
         "ConversionFactor": "One",
         "RateTypeDescription": "Tipo de cambio creado desde API"
     }
-
     try:
         response = requests.post(
             exchange_url, headers=headers, json=exchange_data)
         if response.status_code == 201:
-            print(f"Information successfully written to the ERP: {type}")
+            print("Information successfully written to the ERP:"
+                  f" {exchange_value} - {exchange_code} - {type}")
         else:
             error_msg = (
                 f"Error writing to ERP: {response.status_code}"
@@ -105,59 +106,62 @@ last_day = ["01-31", "02-28", "03-31", "04-30", "05-31", "06-30", "07-31",
             "08-31", "09-30", "10-31", "11-30", "12-31"]
 
 
+def get_and_write_exchange_rate(exchange_name, exchange_code):
+    """
+    Obtains the exchange rate and uploads it to the ERP.
+    """
+    try:
+        print(f"Obtaining the {exchange_name} value.")
+        last_exchange_value = get_exchange_value(exchange_name)
+    except Exception as e:
+        error_msg = f"Error obtaining the {exchange_name} value: {str(e)}"
+        print(error_msg)
+        raise Exception(error_msg)
+    print(f"Uploading the {exchange_name} value to the ERP.")
+    try:
+        write_exchange_rate_to_erp(
+            last_exchange_value, exchange_code, "Predeterminado")
+    except Exception as e:
+        error_msg = (
+            f"Error uploading exchange rate 'Predeterminado'"
+            f" for {exchange_code} to ERP: {str(e)}"
+        )
+        print(error_msg)
+        raise Exception(error_msg)
+
+    try:
+        write_exchange_rate_to_erp(
+            last_exchange_value, exchange_code, "Tienda")
+    except Exception as e:
+        error_msg = (
+            "Error uploading exchange rate 'Tienda' "
+            f"for {exchange_code} to ERP: {str(e)}"
+        )
+        print(error_msg)
+        raise Exception(error_msg)
+
+    try:
+        for c in last_day:
+            if c in formatted_date:
+                print("It is the last day of the month.")
+                write_exchange_rate_to_erp(
+                    last_exchange_value, exchange_code, "Cierre")
+    except Exception as e:
+        error_msg = (
+            "Error verifying the last day of the month or "
+            f"uploading for {exchange_code} 'Cierre': {str(e)}"
+        )
+        print(error_msg)
+        raise Exception(error_msg)
+
+
 def execute_exchange_rate_tasks():
     """
-    Executes the tasks to obtain the dollar value and upload it to the ERP.
+    Executes the tasks to obtain the exchange values and upload it to the ERP.
     """
-    errors = []
-    try:
-        last_dollar_value = get_dollar_value()
-    except Exception as e:
-        error_msg = f"Error al obtener el valor del dólar: {str(e)}"
-        print(error_msg)
-        errors.append(error_msg)
-        last_dollar_value = None
-    if last_dollar_value is not None:
-        try:
-            write_exchange_rate_to_erp(last_dollar_value, "Predeterminado")
-        except Exception as e:
-            error_msg = (
-                "Error al subir tipo de cambio"
-                f"'Predeterminado' al ERP: {str(e)}"
-            )
-            print(error_msg)
-            errors.append(error_msg)
-
-        try:
-            write_exchange_rate_to_erp(last_dollar_value, "Tienda")
-        except Exception as e:
-            error_msg = (
-                f"Error al subir tipo de cambio 'Tienda' al ERP: {str(e)}"
-            )
-            print(error_msg)
-            errors.append(error_msg)
-
-        try:
-            for c in last_day:
-                if c in formatted_date:
-                    print("Es el último día del mes.")
-                    write_exchange_rate_to_erp(last_dollar_value, "Cierre")
-        except Exception as e:
-            error_msg = (
-                "Error al verificar último día del mes o subir tipo de cambio"
-                f"'Cierre': {str(e)}"
-            )
-            print(error_msg)
-            errors.append(error_msg)
-    else:
-        print(
-            "No se pudo obtener el valor del dólar,"
-            "no se realizan cargas al ERP.")
-
-    print(f"Fecha formateada: {formatted_date}")
-    if errors:
-        error_details = "\n".join(errors)
-        raise Exception(f"Errores durante la ejecución:\n{error_details}")
+    get_and_write_exchange_rate("dolar", "USD")
+    get_and_write_exchange_rate("euro", "EUR")
+    get_and_write_exchange_rate("uf", "CLF")
 
 
 # DAG configuration
