@@ -102,8 +102,8 @@ def write_data_to_snowflake(
         temp_duplicates = cursor.fetchall()
         if temp_duplicates:
             duplicate_keys = \
-                ', '.join([str(dup[0]) for dup in temp_duplicates])
-            print(f'Duplicates keys: {duplicate_keys}')
+                ', '.join([str(dup) for dup in temp_duplicates])
+            print(f'{len(temp_duplicates)} Duplicated keys: {duplicate_keys}')
             print(f'SELECT * FROM {temporary_table_name} '
                   f'WHERE {primary_key_columns} IN ({duplicate_keys})')
             cursor.execute(
