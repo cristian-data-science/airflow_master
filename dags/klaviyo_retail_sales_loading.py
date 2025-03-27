@@ -649,6 +649,10 @@ def send_to_klaviyo(event_json):
             if response.status_code == 200:
                 print("✅ Event successfully sent to Klaviyo")
                 return
+            elif response.status_code in [502, 503]:
+                print(f"🔁 Retry {attempt + 1} due to status "
+                      f"{response.status_code}")
+                time.sleep(3)
             else:
                 print(f"❌ Failed with status {response.status_code}: "
                       f"{response.text}")
