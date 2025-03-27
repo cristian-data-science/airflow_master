@@ -1,5 +1,7 @@
 import os
+import time
 import requests
+from requests.exceptions import ConnectionError
 import pytz
 import pandas as pd
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
@@ -21,6 +23,7 @@ KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
 KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
 
+MAX_RETRIES = 3
 USE_TODAY = \
     Variable.get("klaviyo_use_today", default_var="true").lower() == "true"
 
@@ -640,13 +643,21 @@ def send_to_klaviyo(event_json):
         "Accept": "application/json",
         "Content-Type": "application/json"
     }
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = requests.post(url, headers=headers, json=event_json)
+            if response.status_code == 200:
+                print("✅ Event successfully sent to Klaviyo")
+                return
+            else:
+                print(f"❌ Failed with status {response.status_code}: "
+                      f"{response.text}")
+                break
 
-    response = requests.post(url, headers=headers, json=event_json)
-    if response.status_code == 200:
-        print("Event successfully sent to Klaviyo")
-    else:
-        print("Failed to send event to Klaviyo:"
-              f"{response.status_code}, {response.text}")
+        except ConnectionError as e:
+            print(f"🔌 Connection error on attempt {attempt + 1}: {e}")
+            time.sleep(3)
+    raise Exception("❌ Failed to send event to Klaviyo after retries")
 
 
 def run_get_retail_sales_to_klaviyo(**context):
@@ -724,7 +735,7 @@ def run_get_retail_sales_to_klaviyo(**context):
             # print(json.dumps(i, indent=4))
             send_to_klaviyo(i)
         customer_updated_count += 1
-        print(f'## Customer processes: {customer_updated_count}'
+        print(f'#️⃣ Customer processes: {customer_updated_count}'
               f'/{total_customer_to_process} ##')
 
     print("\n### Summary ###")
