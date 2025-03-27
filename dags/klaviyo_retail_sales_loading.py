@@ -5,6 +5,7 @@ import pandas as pd
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from datetime import timedelta, datetime, timezone
 from airflow import DAG
+from airflow.models import Variable
 from airflow.operators.python_operator import PythonOperator
 from dotenv import load_dotenv
 from config.klaviyo_retail_sales_loading_config import default_args
@@ -20,16 +21,18 @@ KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
 KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
 
-# PROD DATES
-local_tz = pytz.timezone('America/Santiago')
-now = datetime.now(local_tz)
-yesterday = now - timedelta(days=1)
-START_DATE = yesterday.strftime('%Y-%m-%d')
-END_DATE = yesterday.strftime('%Y-%m-%d')
+USE_TODAY = \
+    Variable.get("klaviyo_use_today", default_var="true").lower() == "true"
 
-# FIXED DATE
-START_DATE = '2025-03-01'
-END_DATE = '2025-03-27'
+if USE_TODAY:
+    local_tz = pytz.timezone('America/Santiago')
+    now = datetime.now(local_tz)
+    yesterday = now - timedelta(days=1)
+    START_DATE = yesterday.strftime('%Y-%m-%d')
+    END_DATE = yesterday.strftime('%Y-%m-%d')
+else:
+    START_DATE = Variable.get("klaviyo_start_date", default_var="2025-03-21")
+    END_DATE = Variable.get("klaviyo_end_date", default_var="2025-03-27")
 
 
 CUSTOMER_ACCOUNT = None  # None to process all customers
@@ -647,9 +650,11 @@ def send_to_klaviyo(event_json):
 
 
 def run_get_retail_sales_to_klaviyo(**context):
-    print('[Airflow] Staritng Dag - Retail Sales to Klaviyo ##')
+    print('[Airflow] Starting Dag - Retail Sales to Klaviyo ##')
+    print('[Airflow] USE TODAY: '
+          f'{"activated" if USE_TODAY else "deactivated"}')
     global customer_updated_count
-    print(f'Processing sales from {START_DATE} to {END_DATE}')
+    print(f'[Airflow] Processing sales from {START_DATE} to {END_DATE}')
     retail_sales_df = get_retail_sales(
         start_date=START_DATE, end_date=END_DATE,
         cust_account=CUSTOMER_ACCOUNT
