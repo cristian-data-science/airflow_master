@@ -17,7 +17,7 @@ BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
 
-DAYS = 3
+DAYS = 10
 PERIOD = 'day'
 BATCH_SIZE = 10000
 
@@ -28,7 +28,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract accounting transactions data from ERP and '
     'consolidate it in a single table in Snowflake',
-    schedule_interval='0 10 * * *',
+    schedule_interval='45 10 * * *',
     catchup=False,
 )
 
