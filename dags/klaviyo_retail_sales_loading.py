@@ -19,9 +19,16 @@ SHOPIFY_API_PASSWORD = os.getenv('SHOPIFY_API_PASSWORD')
 SHOPIFY_API_URL = \
     os.getenv('SHOPIFY_API_URL') + os.getenv('SHOPIFY_API_VERSION') + '/'
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
+ERP_URL = os.getenv('ERP_URL')
+ERP_TOKEN_URL = os.getenv('ERP_TOKEN_URL')
+ERP_CLIENT_ID = os.getenv('ERP_CLIENT_ID')
+ERP_CLIENT_SECRET = os.getenv('ERP_CLIENT_SECRET')
 KLAVIYO_API_URL = os.getenv('KLAVIYO_API_URL')
 KLAVIYO_API_TOKEN = os.getenv('KLAVIYO_API_TOKEN')
 KLAVIYO_DATE = "2024-06-14 05:38:00-04:00"
+KLAVIYO_LIST_ID = "TAMYkp"
+# TEST: UeeTif
+# PROD: TAMYkp
 
 MAX_RETRIES = 3
 USE_TODAY = \
@@ -39,6 +46,7 @@ else:
 
 
 CUSTOMER_ACCOUNT = None  # None to process all customers
+LOCATOR = 'keko.up9@gmail.com'  # None to process all locators
 AVOID_RUTS = ['55555555-5', '66666666-6', '22222222-2']
 
 customer_updated_count = 0
@@ -665,6 +673,7 @@ def send_to_klaviyo(event_json):
 
 
 def run_get_retail_sales_to_klaviyo(**context):
+    return
     print('[Airflow] Starting Dag - Retail Sales to Klaviyo ##')
     print('[Airflow] USE TODAY: '
           f'{"activated" if USE_TODAY else "deactivated"}')
@@ -776,8 +785,223 @@ def run_get_retail_sales_to_klaviyo(**context):
     print(f"Klaviyo New Profiles: {list(klaviyo_new_customers)}")
 
 
+def get_erp_token():
+    """
+    Get token from ERP using client credentials.
+    """
+    if not all([ERP_URL, ERP_TOKEN_URL, ERP_CLIENT_ID, ERP_CLIENT_SECRET]):
+        raise ValueError(
+            "Faltan variables de entorno para conectarse al ERP."
+        )
+
+    token_url = f"{ERP_TOKEN_URL}/oauth2/v2.0/token"
+    data = {
+        'grant_type': 'client_credentials',
+        'client_id': ERP_CLIENT_ID,
+        'client_secret': ERP_CLIENT_SECRET,
+        'scope': f'{ERP_URL}/.default'
+    }
+    headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+
+    response = requests.post(token_url, data=data, headers=headers)
+    if response.status_code == 200:
+        return response.json().get('access_token')
+    else:
+        raise Exception(
+            f"Error obteniendo token del ERP: "
+            f"{response.status_code} - {response.text}"
+        )
+
+
+def get_new_subscribed_emails_from_erp():
+    """
+    Call endpoint to get new subscribed emails from ERP.
+    Filter by SysModifiedDateTime >= X and
+    RetailMarketingOptIn = Microsoft.Dynamics.DataEntities.NoYes'Yes'
+    """
+    access_token = get_erp_token()
+    url = (
+        f"{ERP_URL}/data/"
+        "LogisticsElectronicAddressBiEntities?"
+        f"$filter=SysModifiedDateTime ge {START_DATE}T00:00:00Z and "
+        "RetailMarketingOptIn eq Microsoft.Dynamics.DataEntities.NoYes'Yes'"
+    )
+    if LOCATOR:
+        url += f" and Locator eq '{LOCATOR}'"
+    print(f"ERP Request URL: {url}")
+    headers = {
+        'Authorization': f'Bearer {access_token}',
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+    }
+
+    response = requests.get(url, headers=headers)
+    if response.status_code != 200:
+        raise Exception(
+            "Error consultando suscripciones en ERP: "
+            f"{response.status_code} - {response.text}"
+        )
+    data = response.json()
+    emails = []
+    for item in data.get("value", []):
+        locator = item.get("Locator", "")
+        if "@" in locator and "." in locator:
+            emails.append(locator.strip().lower())
+    return emails
+
+
+def get_profile_subscriptions_from_klaviyo(email):
+    """
+    Request Klaviyo API to get profile subscriptions
+    by email.
+    Returns:
+    - True if profile exists, False otherwise
+    - Consent status of the profile
+    """
+    if not KLAVIYO_API_TOKEN:
+        raise ValueError("Falta la variable de entorno KLAVIYO_API_TOKEN.")
+    url = (
+        f"https://a.klaviyo.com/api/profiles/"
+        f"?additional-fields[profile]=subscriptions&"
+        f'filter=equals(email,"{email}")'
+    )
+    headers = {
+        'Authorization': f'Klaviyo-API-Key {KLAVIYO_API_TOKEN}',
+        'revision': '2024-06-15',
+        'Accept': 'application/json'
+    }
+
+    print(f"Klaviyo Request URL: {url}")
+    resp = requests.get(url, headers=headers)
+    if resp.status_code not in [200, 201, 202, 204]:
+        print(
+            "Error consultando perfil en Klaviyo: "
+            f"{resp.status_code} - {resp.text}"
+        )
+        return False, None
+
+    json_data = resp.json()
+    data_list = json_data.get("data", [])
+    if not data_list:
+        return False, None
+
+    attributes = data_list[0].get("attributes", {})
+    subscriptions = attributes.get("subscriptions", {})
+    email_marketing = subscriptions.get("email", {}).get("marketing", {})
+    consent = email_marketing.get("consent")
+    return True, consent
+
+
+def subscribe_email_in_klaviyo(email):
+    """
+    Subscribe email in Klaviyo using the API.
+    The email must exist in Klaviyo.
+    """
+    url = "https://a.klaviyo.com/api/profile-subscription-bulk-create-jobs"
+    headers = {
+        'Authorization': f'Klaviyo-API-Key {KLAVIYO_API_TOKEN}',
+        'revision': '2024-06-15',
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+    }
+
+    body = {
+        "data": {
+            "type": "profile-subscription-bulk-create-job",
+            "attributes": {
+                "profiles": {
+                    "data": [
+                        {
+                            "type": "profile",
+                            "attributes": {
+                                "email": email,
+                                "subscriptions": {
+                                    "email": {
+                                        "marketing": {
+                                            "consent": "SUBSCRIBED"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                },
+                "custom_source": "Retail conector"
+            },
+            "relationships": {
+                "list": {
+                    "data": {
+                        "type": "list",
+                        "id": KLAVIYO_LIST_ID
+                    }
+                }
+            }
+        }
+    }
+
+    resp = requests.post(url, headers=headers, json=body)
+    if resp.status_code not in [200, 201, 202]:
+        print(
+            f"Error suscribiendo email '{email}' a Klaviyo: "
+            f"{resp.status_code} - {resp.text}"
+        )
+        return False
+    else:
+        print(f"Email '{email}' suscrito correctamente en Klaviyo.")
+        return True
+
+
+def subscribe_new_erp_optins(**context):
+    '''
+    Main function that:
+    1. Retrieves new subscribed emails from ERP
+    2. Checks if the email exists in Klaviyo
+    3. If the email exists, it checks its consent status
+    '       and subscribes it if it is "NEVER_SUBSCRIBED"
+    '''
+    print('[Airflow] Starting Task - Subscribe new ERP OptIns ##')
+    print('[Airflow] USE TODAY: '
+          f'{"activated" if USE_TODAY else "deactivated"}')
+    emails = get_new_subscribed_emails_from_erp()
+    print(f"Se obtuvieron {len(emails)} emails con OptIn desde ERP.")
+    subscribed_emails = []
+
+    for email in emails:
+        found, consent = get_profile_subscriptions_from_klaviyo(email)
+
+        if not found:
+            print(f"No existe perfil en Klaviyo para {email}.")
+        else:
+            # Si existe el perfil, revisamos su "consent"
+            if consent == "NEVER_SUBSCRIBED":
+                print(f"Perfil en Klaviyo para {email} con "
+                      "consent=NEVER_SUBSCRIBED. Suscribiendo...")
+                subscribed = subscribe_email_in_klaviyo(email)
+                subscribed_emails.append(email) if subscribed else None
+            elif consent in ["SUBSCRIBED", "UNSUBSCRIBED"]:
+                print(f"Perfil para {email} ya está en estado {consent}. "
+                      "No se realiza acción.")
+            else:
+                print(f"Perfil para {email} con consent "
+                      f"desconocido={consent}. Se ignora.")
+
+    print("### Summary ###")
+    print(f"Se encontraron {len(emails)} emails nuevos en ERP.")
+    print(f"Se suscribieron {len(subscribed_emails)} emails nuevos.")
+    print(f"Mails suscritos: {list(subscribed_emails)}")
+
+
 task_get_variants = PythonOperator(
     task_id='get_retail_sales_to_klaviyo',
     python_callable=run_get_retail_sales_to_klaviyo,
     dag=dag,
 )
+
+
+task_subscribe_optins = PythonOperator(
+    task_id='subscribe_new_erp_optins',
+    python_callable=subscribe_new_erp_optins,
+    dag=dag,
+)
+
+task_get_variants >> task_subscribe_optins
