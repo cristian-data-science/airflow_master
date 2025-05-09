@@ -17,7 +17,6 @@ INTERVAL_DAYS = 30  # Days in the query range
 NUMBER_RESULTS = 2  # Minimum number of results to trigger an alert
 MAX_DAYS = 7  # Maximum number of days since the order was created
 EMAILS = [
-    'josefa.gonzalez@patagonia.com',
     'enrique.urrutia@patagonia.com',
     'cesar.orostegui@patagonia.com',
     'clemente.videla@patagonia.com',
@@ -75,8 +74,8 @@ def check_discrepancies_and_send_combined_email(
     # Shopify query
     query_shopify = f'''
         SELECT s.*
-        FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS_COPY s
-        LEFT JOIN PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE_COPY e
+        FROM PATAGONIA.CORE_TEST.SHOPIFY_ORDERS s
+        LEFT JOIN PATAGONIA.CORE_TEST.ERP_PROCESSED_SALESLINE e
             ON s.NAME = e.PURCHORDERFORMNUM
             AND e.SALESPOOLID LIKE 'ECOM'
         WHERE e.PURCHORDERFORMNUM IS NULL
@@ -253,6 +252,7 @@ dag = DAG(
     description=(
         'DAG que revisa discrepancias entre OMS, Shopify y ERP'),
     schedule_interval='0 10 * * *',
+    catchup=False,
 )
 
 t1 = PythonOperator(
