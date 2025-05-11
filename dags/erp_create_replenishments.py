@@ -405,7 +405,7 @@ def send_replenishment_summary_email(
 
     chile_tz = pytz.timezone('America/Santiago')
     current_time = datetime.now(chile_tz)
-    created_date = current_time.strftime('%Y-%m-%d %H:%M:%S %Z')
+    created_date = current_time.strftime('%Y-%m-%d %H:%M')
     week = f'Week {current_time.isocalendar()[1]}'
 
     erp_tr_list = ', '.join(erp_tr_numbers) if erp_tr_numbers else 'None'
