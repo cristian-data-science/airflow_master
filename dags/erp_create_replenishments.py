@@ -374,12 +374,15 @@ def send_replenishment_summary_email(
     Send a summary email about the replenishment process.
     Args:
         replenishment_id: The replenishment ID.
-        erp_tr_numbers: List of ERP transfer order numbers created.
+        erp_tr_numbers: List of ERP transfer order numbers.
         lines_created: Number of lines created.
-        missing_skus: List of SKUs that couldn't be created.
+        missing_skus: List of SKUs that couldn't be found in ERP.
+        user: User who created the replenishment.
     Returns:
-        Dictionary containing email subject and HTML content.
+        A dictionary with subject and html_content for the email.
     """
+    # Get ERP URL from environment
+    erp_url = os.environ.get('ERP_URL', '')
     from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 
     snowflake_conn_id = default_args['snowflake_conn_id']
@@ -500,6 +503,14 @@ def send_replenishment_summary_email(
             <p><strong>Total units:</strong> {total_units}</p>
             <p><strong>ERP Transfers Created:</strong> {erp_tr_list}</p>
             <p><strong>Lines Created:</strong> {lines_created}</p>
+            <p><a href="{erp_url}/?cmp=PAT&mi=InventTransferOrder"
+                style="background-color: #35446f;
+                    color: white;
+                    padding: 8px 15px;
+                    text-decoration: none;
+                    border-radius: 4px;
+                    display: inline-block;
+                    margin-top: 10px;">Ver en ERP</a></p>
         </div>
         <div class="content">
             <h3>Transfer Orders Summary</h3>
