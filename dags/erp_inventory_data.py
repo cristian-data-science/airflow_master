@@ -31,6 +31,7 @@ dag = DAG(
     ' ERP and WMS, and load it into Snowflake',
     schedule_interval='0 9 * * *',
     catchup=False,
+    tags=['erp', 'inventory']
 )
 
 

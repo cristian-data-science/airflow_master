@@ -24,7 +24,8 @@ dag = DAG(
     description='DAG to extract customer data from ERP and '
     'consolidate it in a single table in Snowflake',
     schedule_interval=timedelta(days=1),
-    catchup=False
+    catchup=False,
+    tags=['erp', 'orders']
 )
 
 

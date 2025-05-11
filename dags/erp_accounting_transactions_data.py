@@ -30,6 +30,7 @@ dag = DAG(
     'consolidate it in a single table in Snowflake',
     schedule_interval='45 10 * * *',
     catchup=False,
+    tags=['erp', 'accounting']
 )
 
 

@@ -35,6 +35,7 @@ dag = DAG(
     'and write in Snowflake',
     schedule_interval='5 9,17 * * *',
     catchup=False,
+    tags=['oms', 'orders']
 )
 
 

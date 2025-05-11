@@ -266,7 +266,8 @@ dag = DAG(
     description='DAG to extract product pricelist '
     'data (SalesPriceAgreements) from the ERP and upsert into Snowflake',
     schedule_interval='@weekly',
-    catchup=False
+    catchup=False,
+    tags=['erp', 'pricelist']
 )
 
 fetch_and_load_task = PythonOperator(

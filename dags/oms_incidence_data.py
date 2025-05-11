@@ -27,6 +27,7 @@ dag = DAG(
     'and write in Snowflake',
     schedule_interval='0 9,12,15,17,19,21 * * *',
     catchup=False,
+    tags=['oms', 'incidence']
 )
 
 

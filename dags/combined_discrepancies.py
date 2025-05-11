@@ -254,6 +254,7 @@ dag = DAG(
         'DAG que revisa discrepancias entre OMS, Shopify y ERP'),
     schedule_interval='0 10 * * *',
     catchup=False,
+    tags=['erp', 'oms', 'shopify', 'orders']
 )
 
 t1 = PythonOperator(
