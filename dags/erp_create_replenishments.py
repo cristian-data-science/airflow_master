@@ -1,5 +1,6 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.models import Variable
 from config.erp_create_replenishments_config import default_args, dag_config
 import requests
 import pandas as pd
@@ -675,12 +676,25 @@ def process_replenishment(**context):
     # Send email
     from airflow.operators.email import EmailOperator
 
-    recipients = (
-        dag_config.get('notification_emails') or
-        [context['dag_run'].conf.get('email')] or
-        [default_args['email']]
+    # Get email recipients from Airflow Variable, config, or context
+    email_recipients_str = Variable.get(
+        'erp_replenishments_emails',
+        default_var=''  # Empty default to fall back to config
     )
 
+    # If Variable is set, use it (comma-separated emails)
+    if email_recipients_str.strip():
+        recipients = \
+            [email.strip() for email in email_recipients_str.split(',')]
+    else:
+        # Otherwise fallback to config and context as before
+        recipients = (
+            dag_config.get('notification_emails') or
+            [context['dag_run'].conf.get('email')] or
+            [default_args['email']]
+        )
+
+    # Remove any None or empty values
     recipients = [email for email in recipients if email]
 
     if recipients:
