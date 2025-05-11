@@ -5,3 +5,4 @@ __pycache__/
 venv
 .enY
 .DS_STORE
+models
