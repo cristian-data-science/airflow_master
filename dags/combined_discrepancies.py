@@ -20,7 +20,8 @@ EMAILS = [
     'enrique.urrutia@patagonia.com',
     'cesar.orostegui@patagonia.com',
     'clemente.videla@patagonia.com',
-    'nicole.parra@patagonia.com'
+    'nicole.parra@patagonia.com',
+    'daniela.delaveau@patagonia.com'
 ]
 
 
