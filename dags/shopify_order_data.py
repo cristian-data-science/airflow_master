@@ -33,6 +33,7 @@ dag = DAG(
                 'and write in Snowflake',
     schedule_interval='0 9,17 * * *',
     catchup=False,
+    tags=['shopify', 'orders']
 )
 
 

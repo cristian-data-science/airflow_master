@@ -25,6 +25,7 @@ dag = DAG(
     'it in a table in Snowflake',
     schedule_interval='@weekly',
     catchup=False,
+    tags=['erp', 'products']
 )
 
 

@@ -2,6 +2,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.operators.email import EmailOperator
+from airflow.models import Variable
 from config.combined_discrepancies_config import default_args
 import os
 import pandas as pd
@@ -16,11 +17,14 @@ SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 INTERVAL_DAYS = 30  # Days in the query range
 NUMBER_RESULTS = 2  # Minimum number of results to trigger an alert
 MAX_DAYS = 7  # Maximum number of days since the order was created
-EMAILS = [
+
+# Default emails if not specified in Airflow Variables
+DEFAULT_EMAILS = [
     'enrique.urrutia@patagonia.com',
     'cesar.orostegui@patagonia.com',
     'clemente.videla@patagonia.com',
-    'nicole.parra@patagonia.com'
+    'nicole.parra@patagonia.com',
+    'daniela.delaveau@patagonia.com'
 ]
 
 
@@ -232,9 +236,19 @@ ORDER BY
             '<h3>Discrepancias en las cantidades entre OMS y Shopify:</h3>'
             f'{df_quantity_html}'
         )
+        # Get email recipients from Airflow Variable or use default list
+        email_recipients_str = Variable.get(
+            'combined_discrepancies_emails',
+            default_var=','.join(DEFAULT_EMAILS)
+        )
+
+        # Split email string by comma to get list of emails
+        email_recipients = \
+            [email.strip() for email in email_recipients_str.split(',')]
+
         email = EmailOperator(
             task_id='send_combined_email',
-            to=EMAILS,
+            to=email_recipients,
             subject=(
                 'ALERTA: Discrepancias encontradas en Shopify, ERP y OMS'),
             html_content=email_content,
@@ -253,6 +267,7 @@ dag = DAG(
         'DAG que revisa discrepancias entre OMS, Shopify y ERP'),
     schedule_interval='0 10 * * *',
     catchup=False,
+    tags=['erp', 'oms', 'shopify', 'orders']
 )
 
 t1 = PythonOperator(

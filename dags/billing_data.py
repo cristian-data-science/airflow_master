@@ -54,6 +54,7 @@ dag = DAG(
                  ' SOAP service and load it into Snowflake'),
     schedule_interval='15 11 * * *',
     catchup=False,
+    tags=['blueline', 'invoice']
 )
 
 # Regex pattern to fix ampersands that are not part of an entity

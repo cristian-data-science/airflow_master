@@ -59,7 +59,8 @@ dag = DAG(
     description='DAG to load retail sales data '
     'from Snowflake and load it in Klaviyo',
     schedule_interval='0 6 * * *',
-    catchup=False
+    catchup=False,
+    tags=['klaviyo', 'retail_sales']
 )
 
 

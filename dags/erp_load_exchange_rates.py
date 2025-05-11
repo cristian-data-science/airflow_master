@@ -171,7 +171,8 @@ with DAG(
     description=(
         'DAG that retrieves the dollar value and uploads it to the ERP'),
     schedule_interval='0 10 * * *',
-    catchup=False
+    catchup=False,
+    tags=['erp', 'exchange_rate']
 ) as dag:
 
     execute_exchange_rate_task = PythonOperator(

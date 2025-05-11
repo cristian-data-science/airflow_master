@@ -26,6 +26,7 @@ dag = DAG(
     'from Shopify and consolidate it in Snowflake',
     schedule_interval='0 11 * * *',
     catchup=False,
+    tags=['shopify', 'products']
 )
 
 
