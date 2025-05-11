@@ -366,7 +366,8 @@ def send_replenishment_summary_email(
     replenishment_id: str,
     erp_tr_numbers: List[str],
     lines_created: int,
-    missing_skus: List[Dict[str, str]]
+    missing_skus: List[Dict[str, str]],
+    user: str
 ):
     """
     Send a summary email about the replenishment process.
@@ -405,8 +406,8 @@ def send_replenishment_summary_email(
 
     chile_tz = pytz.timezone('America/Santiago')
     current_time = datetime.now(chile_tz)
-    created_date = current_time.strftime('%Y-%m-%d %H:%M')
-    week = f'Week {current_time.isocalendar()[1]}'
+    created_date = current_time.strftime('%d-%m-%Y %H:%M')
+    week = f'W{current_time.isocalendar()[1]}'
 
     erp_tr_list = ', '.join(erp_tr_numbers) if erp_tr_numbers else 'None'
 
@@ -459,13 +460,15 @@ def send_replenishment_summary_email(
             "<table border='1' cellpadding='5' cellspacing='0'>"
         )
         missing_skus_table += (
-            "<tr><th>Store</th><th>SKU</th><th>Error</th></tr>"
+            "<tr><th>Store</th><th>SKU</th>"
+            "<th>Quantity</th><th>Error</th></tr>"
         )
 
         for sku in missing_skus:
             missing_skus_table += "<tr>"
             missing_skus_table += f"<td>{sku.get('STORE', 'N/A')}</td>"
             missing_skus_table += f"<td>{sku.get('SKU', 'N/A')}</td>"
+            missing_skus_table += f"<td>{sku.get('QUANTITY', 0)}</td>"
             missing_skus_table += f"<td>{sku.get('ERROR', 'Unknown')}</td>"
             missing_skus_table += "</tr>"
 
@@ -488,7 +491,8 @@ def send_replenishment_summary_email(
     <body>
         <div class="header">
             <h2>Replenishment Summary: {replenishment_id}</h2>
-            <p><strong>Created Date:</strong> {created_date}</p>
+            <p><strong>Created Date:</strong> {created_date} hrs</p>
+            <p><strong>Created by:</strong> {user}</p>
             <p><strong>Week:</strong> {week}</p>
             <p><strong>Stores:</strong> {stores_considered}</p>
             <p><strong>Selected Deliveries:</strong> {selected_deliveries}</p>
@@ -523,6 +527,7 @@ def process_replenishment(**context):
     # Get replenishment ID from DAG run configuration
     dag_run = context['dag_run']
     replenishment_id = dag_run.conf.get('replenishmentID')
+    user = dag_run.conf.get('user')
 
     if not replenishment_id:
         raise ValueError(
@@ -654,6 +659,7 @@ def process_replenishment(**context):
             {
                 'STORE': row['TIENDA'],
                 'SKU': row['SKU'],
+                'QUANTITY': row['TRANSFERQUANTITY'],
                 'ERROR': 'Missing ERP data'
             }
             for _, row in missing_erp_data.iterrows()
@@ -662,7 +668,8 @@ def process_replenishment(**context):
     email_data = send_replenishment_summary_email(
         replenishment_id, erp_tr_numbers,
         len(erp_lines_with_info),
-        missing_skus_data
+        missing_skus_data,
+        user
     )
 
     # Send email

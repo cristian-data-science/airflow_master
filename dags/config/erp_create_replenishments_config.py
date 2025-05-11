@@ -24,6 +24,8 @@ dag_config = {
     # List of email addresses to notify
     'notification_emails': [
         'enrique.urrutia@patagonia.com',
-        'eiurrutia@uc.cl'
+        'sebastian.bahamondes@patagonia.com',
+        'juan.valdes@patagonia.com',
+        'zdenka.skorin@patagonia.com'
     ]
 }
