@@ -647,10 +647,22 @@ def process_replenishment(**context):
     }
 
     logging.info("Preparing email summary")
+    # Convert missing_erp_data to list of dicts for email
+    missing_skus_data = []
+    if not missing_erp_data.empty:
+        missing_skus_data = [
+            {
+                'STORE': row['TIENDA'],
+                'SKU': row['SKU'],
+                'ERROR': 'Missing ERP data'
+            }
+            for _, row in missing_erp_data.iterrows()
+        ]
+
     email_data = send_replenishment_summary_email(
         replenishment_id, erp_tr_numbers,
         len(erp_lines_with_info),
-        len(missing_erp_data) if not missing_erp_data.empty else 0
+        missing_skus_data
     )
 
     # Send email
