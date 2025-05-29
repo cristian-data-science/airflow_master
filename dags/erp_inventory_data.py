@@ -29,7 +29,7 @@ dag = DAG(
     default_args=default_args,
     description='DAG to extract inventory data from'
     ' ERP and WMS, and load it into Snowflake',
-    schedule_interval='0 9 * * *',
+    schedule_interval='40 9,12,13,18 * * *',
     catchup=False,
     tags=['erp', 'inventory']
 )

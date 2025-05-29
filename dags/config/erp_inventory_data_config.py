@@ -5,7 +5,11 @@ default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2024, 10, 30, 9, 0),
-    'email': ['enrique.urrutia@patagonia.com'],
+    'email': [
+        'enrique.urrutia@patagonia.com',
+        'sebastian.bahamondes@patagonia.com',
+        'juan.valdes@patagonia.com'
+    ],
     'phone': 0,
     'email_on_failure': True,
     'email_on_retry': False,
