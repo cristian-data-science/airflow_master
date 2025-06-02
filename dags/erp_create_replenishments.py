@@ -139,7 +139,7 @@ def create_erp_line(
         "PriceType": line_data['PriceType'],
         # Fixed fields
         "ATPTimeFenceDays": 0,
-        "AllowedUnderdeliveryPercentage": 0,
+        "AllowedUnderdeliveryPercentage": 100,
         "WillProductReceivingCrossDockProducts": "No",
         "OverrideFEFODateControl": "No",
         "IntrastatCostAmount": 0,
