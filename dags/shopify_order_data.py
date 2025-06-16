@@ -399,6 +399,13 @@ def orders_to_dataframe(orders_datalist):
         for order in orders_datalist:
             customer_info = order.get('customer') or {}
             shipping_address = order.get('shipping_address') or {}
+            email_marketing_consent = (
+                customer_info.get('emailMarketingConsent') or {})
+            marketing_state = email_marketing_consent.get('marketingState')
+            marketing_opt_in_level = (
+                email_marketing_consent.get('marketingOptInLevel', ''))
+            consent_updated_at = (
+                email_marketing_consent.get('consentUpdatedAt'))
 
             order_data = {
                 'ORDER_ID': order.get('id'),
@@ -418,18 +425,9 @@ def orders_to_dataframe(orders_datalist):
                 'CUSTOMER_ID': customer_info.get('id'),
                 'SMS_MARKETING_CONSENT': None,
                 'TAGS': customer_info.get('tags'),
-                'ACCEPTS_MARKETING': (
-                    customer_info.get('emailMarketingConsent', {})
-                    .get('marketingState') == 'SUBSCRIBED'
-                ),
-                'ACCEPTS_MARKETING_UPDATED_AT': (
-                    customer_info.get('emailMarketingConsent', {})
-                    .get('consentUpdatedAt')
-                ),
-                'MARKETING_OPT_IN_LEVEL': (
-                    customer_info.get('emailMarketingConsent', {})
-                    .get('marketingOptInLevel', '')
-                ),
+                'ACCEPTS_MARKETING': marketing_state == 'SUBSCRIBED',
+                'ACCEPTS_MARKETING_UPDATED_AT': consent_updated_at,
+                'MARKETING_OPT_IN_LEVEL': marketing_opt_in_level,
                 'DISCOUNTED_PRICE': order.get('discounted_shipping_price'),
             }
             orders_cleaned.append(order_data)
@@ -450,14 +448,8 @@ def orders_to_dataframe(orders_datalist):
                 'PHONE': shipping_address.get('phone'),
                 'LATITUDE': shipping_address.get('latitude'),
                 'LONGITUDE': shipping_address.get('longitude'),
-                'ACCEPTS_MARKETING': (
-                    customer_info.get('emailMarketingConsent', {})
-                    .get('marketingState') == 'SUBSCRIBED'
-                ),
-                'MARKETING_OPT_IN_LEVEL': (
-                    customer_info.get('emailMarketingConsent', {})
-                    .get('marketingOptInLevel', '')
-                ),
+                'ACCEPTS_MARKETING': marketing_state == 'SUBSCRIBED',
+                'MARKETING_OPT_IN_LEVEL': marketing_opt_in_level,
             }
             shipping_addresses.append(shipping_data)
 
