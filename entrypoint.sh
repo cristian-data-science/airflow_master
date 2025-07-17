@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Actualizar la base de datos
+set -e
+
+# 1) Migraciones
 airflow db upgrade
 
-# Crear usuario admin si no existe
+# 2) Usuario admin (idempotente)
 airflow users create \
   --username "$AIRFLOW_ADMIN_USER" \
   --firstname "Admin" \
@@ -11,8 +13,8 @@ airflow users create \
   --password "$AIRFLOW_ADMIN_PASSWORD" \
   --email "admin@example.com" || true
 
-# Iniciar el scheduler en segundo plano
-airflow scheduler &
+# 3) Scheduler SIN mini-servidor de logs (background)
+airflow scheduler --skip-serve-logs &
 
-# Ejecutar el webserver en primer plano
+# 4) Webserver en primer plano (mantiene el contenedor vivo)
 exec airflow webserver
