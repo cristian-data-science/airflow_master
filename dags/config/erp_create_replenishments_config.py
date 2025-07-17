@@ -21,6 +21,9 @@ dag_config = {
     'schedule_interval': None,  # Only triggered externally
     'catchup': False,
     'tags': ['erp', 'replenishment'],
+    # Prevent concurrent executions to avoid conflicts
+    'max_active_runs': 1,  # Only allow 1 DAG run at a time
+    'max_active_tasks': 1,  # Only allow 1 task at a time
     # List of email addresses to notify
     'notification_emails': [
         'enrique.urrutia@patagonia.com',

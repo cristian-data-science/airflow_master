@@ -733,6 +733,8 @@ with DAG(
     schedule_interval=dag_config['schedule_interval'],
     catchup=dag_config['catchup'],
     tags=dag_config['tags'],
+    max_active_runs=dag_config['max_active_runs'],
+    max_active_tasks=dag_config['max_active_tasks'],
 ) as dag:
     process_task = PythonOperator(
         task_id='process_replenishment',
