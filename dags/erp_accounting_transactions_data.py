@@ -1,6 +1,7 @@
 from datetime import timedelta, datetime
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.models import Variable
 from dotenv import load_dotenv
 from config.erp_accounting_transactions_data_config import default_args
 from utils.utils import write_data_to_snowflake
@@ -17,9 +18,11 @@ BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
 
-DAYS = 10
-PERIOD = 'day'
-BATCH_SIZE = 10000
+# Configurable variables from Airflow UI with default values
+DAYS = int(Variable.get("erp_accounting_days", default_var="10"))
+PERIOD = Variable.get("erp_accounting_period", default_var="day")
+BATCH_SIZE = int(Variable.get(
+    "erp_accounting_batch_size", default_var="10000"))
 
 
 # Dag definition
@@ -203,11 +206,20 @@ def run_get_byod_accounting_transactions(**context):
     '''
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
+    
+    # Show configuration values being used
+    print('[Airflow] Configuration values:')
+    print(f'  - DAYS: {DAYS}')
+    print(f'  - PERIOD: {PERIOD}')
+    print(f'  - BATCH_SIZE: {BATCH_SIZE}')
 
     end_date = datetime.now().replace(
         hour=0, minute=0, second=0, microsecond=0
     )
     start_date = end_date - timedelta(days=DAYS)
+    
+    print(f'[Airflow] Processing accounting transactions from '
+          f'{start_date} to {end_date}')
 
     get_massive_byod_accounting_transactions(
         start_date, end_date, period=PERIOD, batch_size=BATCH_SIZE
