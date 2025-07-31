@@ -8,16 +8,295 @@ import os
 from datetime import datetime
 import pytz
 import logging
+import random
 from typing import List, Dict, Any
 
 
-def get_erp_token() -> str:
+# Testing configuration - enables realistic error simulation
+TESTING_CONFIG = {
+    'enable_error_simulation': Variable.get(
+        "erp_enable_error_simulation", default_var="false"
+    ).lower() == "true",
+    'error_probabilities': {
+        '401': float(Variable.get(
+            "erp_error_401_probability", default_var="0.00")),  # Token expired
+        '429': float(Variable.get(
+            "erp_error_429_probability", default_var="0.00")),  # Rate limiting
+        '500': float(Variable.get(
+            "erp_error_500_probability", default_var="0.00")),  # Server error
+        '502': float(Variable.get(
+            "erp_error_502_probability", default_var="0.00")),  # Bad gateway
+        '503': float(Variable.get(
+            "erp_error_503_probability", default_var="0.00")),  # Unavailable
+        '504': float(Variable.get(
+            "erp_error_504_probability", default_var="0.00")),  # Timeout
+        'network': float(Variable.get(
+            "erp_error_network_probability", default_var="0.00"))  # Network
+    },
+    'fatal_error_probability': float(Variable.get(
+        "erp_error_fatal_probability", default_var="0.00")),  # Unrecoverable
+    'persistent_error_probability': float(Variable.get(
+        "erp_error_persistent_probability", default_var="0.05")),  # Persistent
+    'persistent_error_type': Variable.get(
+        "erp_error_persistent_type", default_var="500")  # Type of persistent
+}
+
+# Track persistent failures per operation
+_persistent_failures = {}
+
+
+def simulate_api_error(
+    operation_type: str = "unknown",
+    operation_id: str = None
+) -> Dict[str, Any]:
     """
-    Gets an ERP token.
+    Simulates different types of API errors based on configured probabilities.
+
+    Args:
+        operation_type: Type of operation ('header', 'line', 'token')
+        operation_id: Unique identifier for tracking persistent failures
+
+    Returns:
+        Dictionary with error information or None if no error simulated
+    """
+    if not TESTING_CONFIG['enable_error_simulation']:
+        return None
+
+    # Check for persistent errors first
+    if operation_id and TESTING_CONFIG['persistent_error_probability'] > 0:
+        # If this operation was already marked as persistently failing
+        if operation_id in _persistent_failures:
+            error_type = _persistent_failures[operation_id]['error_type']
+            return _get_error_response(error_type)
+
+        # Check if this operation should start failing persistently
+        persistent_roll = random.random()
+        if persistent_roll < TESTING_CONFIG['persistent_error_probability']:
+            error_type = TESTING_CONFIG['persistent_error_type']
+            _persistent_failures[operation_id] = {
+                'error_type': error_type,
+                'operation_type': operation_type
+            }
+            return _get_error_response(error_type)
+
+    # Generate random number to determine if an error should occur
+    error_roll = random.random()
+    cumulative_probability = 0.0
+
+    for error_type, probability in TESTING_CONFIG[
+            'error_probabilities'].items():
+        cumulative_probability += probability
+
+        if error_roll < cumulative_probability:
+            return _get_error_response(error_type)
+
+    # Check for fatal errors separately (these always fail all retries)
+    fatal_roll = random.random()
+    if fatal_roll < TESTING_CONFIG['fatal_error_probability']:
+        return {
+            'status_code': 400,
+            'text': ('{"error":"fatal_error",'
+                     '"message":"Simulated fatal error"}'),
+            'json': {
+                "error": "fatal_error",
+                "message": "Simulated fatal error"
+            },
+            'is_fatal': True  # Special flag: always fails
+        }
+
+    # If we get here, no error was simulated
+    return None
+
+
+def _get_error_response(error_type: str) -> Dict[str, Any]:
+    """Helper function to get error response based on error type."""
+    if error_type == '401':
+        return {
+            'status_code': 401,
+            'text': ('{"error":"invalid_token",'
+                     '"error_description":'
+                     '"The access token expired"}'),
+            'json': {
+                "error": "invalid_token",
+                "error_description": "The access token expired"
+            }
+        }
+    elif error_type == '429':
+        return {
+            'status_code': 429,
+            'text': ('{"error":"rate_limit_exceeded",'
+                     '"message":"Too many requests"}'),
+            'json': {
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests"
+            }
+        }
+    elif error_type == '500':
+        return {
+            'status_code': 500,
+            'text': ('{"error":"internal_server_error",'
+                     '"message":"Internal server error"}'),
+            'json': {
+                "error": "internal_server_error",
+                "message": "Internal server error"
+            }
+        }
+    elif error_type == '502':
+        return {
+            'status_code': 502,
+            'text': '{"error":"bad_gateway","message":"Bad gateway"}',
+            'json': {
+                "error": "bad_gateway",
+                "message": "Bad gateway"
+            }
+        }
+    elif error_type == '503':
+        return {
+            'status_code': 503,
+            'text': ('{"error":"service_unavailable",'
+                     '"message":"Service temporarily unavailable"}'),
+            'json': {
+                "error": "service_unavailable",
+                "message": "Service temporarily unavailable"
+            }
+        }
+    elif error_type == '504':
+        return {
+            'status_code': 504,
+            'text': ('{"error":"gateway_timeout",'
+                     '"message":"Gateway timeout"}'),
+            'json': {
+                "error": "gateway_timeout",
+                "message": "Gateway timeout"
+            }
+        }
+    elif error_type == 'network':
+        return {
+            'network_error': True,
+            'error_message': "Simulated network connection error"
+        }
+    else:
+        return None
+
+
+def make_api_request(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    json_data: Dict[str, Any] = None,
+    data: Dict[str, Any] = None,
+    operation_type: str = "unknown",
+    operation_id: str = None
+) -> requests.Response:
+    """
+    Wrapper function that decides whether to use simulation or real requests.
+
+    Args:
+        method: HTTP method ('GET', 'POST', etc.)
+        url: Request URL
+        headers: Request headers
+        json_data: JSON payload for POST requests
+        data: Form data for POST requests
+        operation_type: Type of operation for logging (used only in testing)
+        operation_id: Unique identifier for tracking persistent failures
+
+    Returns:
+        Response object (real or simulated)
+    """
+    # If testing is enabled, use simulation
+    if TESTING_CONFIG['enable_error_simulation']:
+        return make_request_with_simulation(
+            method, url, headers, json_data, data, operation_type, operation_id
+        )
+
+    # Otherwise, use normal requests (production code)
+    if method.upper() == 'POST':
+        if json_data is not None:
+            return requests.post(url, headers=headers, json=json_data)
+        elif data is not None:
+            return requests.post(url, headers=headers, data=data)
+        else:
+            return requests.post(url, headers=headers)
+    elif method.upper() == 'GET':
+        return requests.get(url, headers=headers)
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
+
+
+def make_request_with_simulation(
+    method: str,
+    url: str,
+    headers: Dict[str, str],
+    json_data: Dict[str, Any] = None,
+    data: Dict[str, Any] = None,
+    operation_type: str = "unknown",
+    operation_id: str = None
+) -> requests.Response:
+    """
+    Makes an HTTP request with optional error simulation for testing.
+
+    Args:
+        method: HTTP method ('GET', 'POST', etc.)
+        headers: Request headers
+        url: Request URL
+        json_data: JSON payload for POST requests
+        data: Form data for POST requests
+        operation_type: Type of operation for logging
+        operation_id: Unique identifier for tracking persistent failures
+
+    Returns:
+        Response object (real or simulated)
+    """
+    # Check if we should simulate an error
+    simulated_error = simulate_api_error(operation_type, operation_id)
+
+    if simulated_error:
+        if simulated_error.get('network_error'):
+            # Simulate network error
+            raise requests.exceptions.ConnectionError(
+                simulated_error['error_message']
+            )
+        else:
+            # Create a mock response object
+            class MockResponse:
+                def __init__(self, status_code: int, text: str,
+                             json_data: Dict):
+                    self.status_code = status_code
+                    self.text = text
+                    self._json_data = json_data
+
+                def json(self):
+                    return self._json_data
+
+            return MockResponse(
+                simulated_error['status_code'],
+                simulated_error['text'],
+                simulated_error['json']
+            )
+
+    # Make real request if no error simulation
+    if method.upper() == 'POST':
+        if json_data is not None:
+            return requests.post(url, headers=headers, json=json_data)
+        elif data is not None:
+            return requests.post(url, headers=headers, data=data)
+        else:
+            return requests.post(url, headers=headers)
+    elif method.upper() == 'GET':
+        return requests.get(url, headers=headers)
+    else:
+        raise ValueError(f"Unsupported HTTP method: {method}")
+
+
+def get_erp_token(max_retries: int = 3) -> str:
+    """
+    Gets an ERP token with retry logic.
+    Args:
+        max_retries: Maximum number of retries (default: 3).
     Returns:
         The ERP token.
     Raises:
-        Exception: If an error occurs.
+        Exception: If an error occurs after all retries.
     """
     erp_token_url = os.environ.get('ERP_TOKEN_URL')
     erp_url = os.environ.get('ERP_URL')
@@ -34,30 +313,78 @@ def get_erp_token() -> str:
         'scope': f"{erp_url}/.default"
     }
 
-    response = requests.post(
-        f"{erp_token_url}/oauth2/v2.0/token", data=data)
+    for attempt in range(max_retries):
+        try:
+            response = make_api_request(
+                'POST',
+                f"{erp_token_url}/oauth2/v2.0/token",
+                {'Content-Type': 'application/x-www-form-urlencoded'},
+                data=data,
+                operation_type='token'
+            )
+        except requests.exceptions.RequestException as e:
+            error_msg = f"Network error getting ERP token: {str(e)}"
+            if attempt == max_retries - 1:
+                raise Exception(error_msg)
+            else:
+                logging.warning(
+                    f"Network error on attempt {attempt + 1}: {error_msg}. "
+                    "Retrying...")
+                continue
 
-    if response.status_code != 200:
-        raise Exception(
-            f"Error getting ERP token: {response.status_code} {response.text}")
+        if response.status_code == 200:
+            token_data = response.json()
+            if not token_data.get('access_token'):
+                raise Exception("Error al obtener token ERP")
+            return token_data['access_token']
+        elif (hasattr(response, '_json_data') and
+              response._json_data.get('error') == 'fatal_error'):
+            # This is a simulated fatal error - should always fail
+            logging.error("❌ Fatal error getting ERP token")
+            raise Exception(f"Fatal error getting ERP token: {response.text}")
+        elif (response.status_code in (429, 502, 503, 504) and
+              attempt < max_retries - 1):
+            # Rate limiting or server errors - retry with delay
+            import time
+            delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+            logging.warning(
+                f"Server error {response.status_code} on "
+                f"attempt {attempt + 1} getting ERP token. "
+                f"Retrying in {delay} seconds...")
+            time.sleep(delay)
+            continue
+        else:
+            error_msg = (
+                f"Error getting ERP token: {response.status_code} "
+                f"{response.text}"
+            )
+            if attempt == max_retries - 1:
+                # Last attempt failed, raise exception
+                raise Exception(error_msg)
+            else:
+                logging.warning(
+                    f"Attempt {attempt + 1} failed: {error_msg}. Retrying...")
+                continue
 
-    token_data = response.json()
-    if not token_data.get('access_token'):
-        raise Exception("Error al obtener token ERP")
-
-    return token_data['access_token']
+    # This should never be reached, but just in case
+    raise Exception(f"Failed to get ERP token after {max_retries} attempts")
 
 
-def create_erp_header(token: str, receiving_warehouse_id: str) -> str:
+def create_erp_header(
+    token: str,
+    receiving_warehouse_id: str,
+    max_retries: int = 3
+) -> str:
     """
-    Creates a header in the ERP for a given transfer order.
+    Creates a header in the ERP for a given transfer order with retry logic.
     Args:
         token: The ERP token.
         receiving_warehouse_id: The receiving warehouse ID.
+        max_retries: Maximum number of retries (default: 3).
     Returns:
         The ERP transfer order number.
     Raises:
-        Exception: If an error occurs.
+        Exception: If an error occurs after all retries.
     """
     erp_url = os.environ.get('ERP_URL')
     if not erp_url:
@@ -68,6 +395,7 @@ def create_erp_header(token: str, receiving_warehouse_id: str) -> str:
     now = datetime.now(timezone.utc)
     formatted_date = now.strftime('%Y-%m-%dT%H:%M:%SZ')
 
+    # Prepare the request body once
     body = {
         "dataAreaId": "pat",
         "RequestedReceiptDate": formatted_date,
@@ -79,49 +407,139 @@ def create_erp_header(token: str, receiving_warehouse_id: str) -> str:
         "TransferOrderStockTransferPriceType": "CostPrice"
     }
 
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {token}'
-    }
+    for attempt in range(max_retries):
+        try:
+            # Headers need to be inside loop in case token changes
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {token}'
+            }
 
-    response = requests.post(
-        f"{erp_url}/data/TransferOrderHeaders",
-        headers=headers, json=body)
+            # Create unique operation ID for persistent error tracking
+            operation_id = f"header_{receiving_warehouse_id}"
 
-    if response.status_code not in (200, 201):
-        raise Exception(
-            f"Error al crear cabecera para {receiving_warehouse_id}: "
-            f"{response.status_code} {response.text}")
+            try:
+                response = make_api_request(
+                    'POST',
+                    f"{erp_url}/data/TransferOrderHeaders",
+                    headers,
+                    json_data=body,
+                    operation_type='header',
+                    operation_id=operation_id
+                )
+            except requests.exceptions.RequestException as e:
+                error_msg = (
+                    f"Network error creating header for "
+                    f"{receiving_warehouse_id}: {str(e)}"
+                )
+                if attempt == max_retries - 1:
+                    raise Exception(error_msg)
+                else:
+                    logging.warning(
+                        f"Network error on attempt {attempt + 1}: "
+                        f"{error_msg}. Retrying...")
+                    continue
 
-    data = response.json()
-    return data.get('TransferOrderNumber')
+            if response.status_code in (200, 201):
+                data = response.json()
+                transfer_order_number = data.get('TransferOrderNumber')
+                logging.info(
+                    f"✅ Created ERP header for store "
+                    f"{receiving_warehouse_id}: {transfer_order_number}")
+                return transfer_order_number
+            elif (hasattr(response, '_json_data') and
+                  response._json_data.get('error') == 'fatal_error'):
+                # This is a simulated fatal error - should always fail
+                logging.error(
+                    f"❌ Fatal error for header {receiving_warehouse_id} - "
+                    "omitting this store")
+                raise Exception(
+                    f"Fatal error for warehouse {receiving_warehouse_id}: "
+                    f"{response.text}")
+            elif response.status_code == 401 and attempt < max_retries - 1:
+                # Token expired, get new token and retry
+                logging.warning(
+                    f"Token expired (401) on attempt {attempt + 1} for "
+                    f"warehouse {receiving_warehouse_id}. "
+                    "Getting new token...")
+                token = get_erp_token()
+                continue
+            elif (response.status_code in (429, 502, 503, 504) and
+                  attempt < max_retries - 1):
+                # Rate limiting or server errors - retry with delay
+                import time
+                delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                logging.warning(
+                    f"Server error {response.status_code} on "
+                    f"attempt {attempt + 1} for warehouse "
+                    f"{receiving_warehouse_id}. "
+                    f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+                continue
+            else:
+                error_text = response.text
+                error_msg = (
+                    f"Error al crear cabecera para {receiving_warehouse_id}: "
+                    f"{response.status_code} {error_text}"
+                )
+                if attempt == max_retries - 1:
+                    # Last attempt failed, raise exception
+                    raise Exception(error_msg)
+                else:
+                    logging.warning(
+                        f"Attempt {attempt + 1} failed: {error_msg}. "
+                        "Retrying...")
+                    continue
+
+        except requests.exceptions.RequestException as e:
+            error_msg = (
+                f"Network error creating header for {receiving_warehouse_id}: "
+                f"{str(e)}"
+            )
+            if attempt == max_retries - 1:
+                raise Exception(error_msg)
+            else:
+                logging.warning(
+                    f"Network error on attempt {attempt + 1}: {error_msg}. "
+                    "Retrying...")
+                continue
+
+    # This should never be reached, but just in case
+    raise Exception(
+        f"Failed to create header after {max_retries} attempts for "
+        f"warehouse {receiving_warehouse_id}"
+    )
 
 
 def create_erp_line(
     token: str,
     transfer_order_number: str,
-    line_data: Dict[str, Any]
+    line_data: Dict[str, Any],
+    max_retries: int = 3
 ) -> Dict[str, str]:
     """
-    Creates a line in the ERP for a given transfer order.
+    Creates a line in the ERP for a given transfer order with retry logic.
     Args:
         token: The ERP token.
         transfer_order_number: The transfer order number.
         line_data: The line data.
+        max_retries: Maximum number of retries (default: 3).
     Returns:
         Dictionary with the ERP line ID.
     Raises:
-        Exception: If an error occurs.
+        Exception: If an error occurs after all retries.
     """
     erp_url = os.environ.get('ERP_URL')
     if not erp_url:
         raise ValueError("Missing ERP_URL in environment variables")
 
+    # Prepare the request body once - it doesn't change between retries
     body = {
         "dataAreaId": "pat",
         "TransferOrderNumber": transfer_order_number,
         "LineNumber": line_data['LineNumber'],
-        "OrderedInventoryStatusId": line_data['OrderedInventoryStatusId'],
+        "OrderedInventoryStatusId":
+            line_data['OrderedInventoryStatusId'],
         "ProductStyleId": line_data['ProductStyleId'],
         "TransferQuantity": line_data['TransferQuantity'],
         "RequestedReceiptDate": line_data['RequestedReceiptDate'],
@@ -167,23 +585,119 @@ def create_erp_line(
         "VATPriceType": "CostPrice"
     }
 
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {token}'
-    }
+    for attempt in range(max_retries):
+        try:
+            # Headers need to be inside the loop because token might change
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {token}'
+            }
 
-    response = requests.post(
-        f"{erp_url}/data/TransferOrderLines",
-        headers=headers, json=body)
+            # Create unique operation ID for persistent error tracking
+            operation_id = (f"line_{transfer_order_number}_"
+                            f"{line_data['LineNumber']}")
 
-    if response.status_code not in (200, 201):
-        error_text = response.text
-        raise Exception(
-            f"Error al crear línea para TR {transfer_order_number}: "
-            f"{response.status_code} {error_text}")
+            try:
+                response = make_api_request(
+                    'POST',
+                    f"{erp_url}/data/TransferOrderLines",
+                    headers,
+                    json_data=body,
+                    operation_type='line',
+                    operation_id=operation_id
+                )
+            except requests.exceptions.RequestException as e:
+                error_msg = (
+                    f"Network error creating line for TR "
+                    f"{transfer_order_number}, line "
+                    f"{line_data['LineNumber']}: {str(e)}"
+                )
+                if attempt == max_retries - 1:
+                    raise Exception(error_msg)
+                else:
+                    logging.warning(
+                        f"Network error on attempt {attempt + 1}: "
+                        f"{error_msg}. Retrying...")
+                    continue
 
-    data = response.json()
-    return {"ERP_LINE_ID": data.get("ShippingInventoryLotId")}
+            if response.status_code in (200, 201):
+                data = response.json()
+                line_id = data.get("ShippingInventoryLotId")
+                logging.info(
+                    f"✅ Created ERP line for TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']}: {line_id}")
+                return {"ERP_LINE_ID": line_id}
+            elif (hasattr(response, '_json_data') and
+                  response._json_data.get('error') == 'fatal_error'):
+                # This is a simulated fatal error - should always fail
+                logging.error(
+                    f"❌ Fatal error for line TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']} - omitting this line")
+                raise Exception(
+                    f"Fatal error for TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']}: {response.text}")
+            elif response.status_code == 401 and attempt < max_retries - 1:
+                # Token expired, get new token and retry
+                logging.warning(
+                    f"Token expired (401) on attempt {attempt + 1} for "
+                    f"TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']}. "
+                    "Getting new token...")
+                token = get_erp_token()
+                continue
+            elif (response.status_code in (429, 502, 503, 504) and
+                  attempt < max_retries - 1):
+                # Rate limiting or server errors - retry with backoff
+                import time
+                delay = 2 ** attempt  # Exponential backoff: 1s, 2s, 4s
+                logging.warning(
+                    f"Server error {response.status_code} on "
+                    f"attempt {attempt + 1} for TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']}. "
+                    f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+                continue
+            elif response.status_code == 400 and attempt < max_retries - 1:
+                # Bad request - could be temporary data issue, retry once
+                logging.warning(
+                    f"Bad request (400) on attempt {attempt + 1} for "
+                    f"TR {transfer_order_number}, "
+                    f"line {line_data['LineNumber']}. "
+                    f"Response: {response.text}. Retrying...")
+                continue
+            else:
+                error_text = response.text
+                error_msg = (
+                    f"Error al crear línea para TR {transfer_order_number}: "
+                    f"{response.status_code} {error_text}"
+                )
+                if attempt == max_retries - 1:
+                    # Last attempt failed, raise exception
+                    raise Exception(error_msg)
+                else:
+                    logging.warning(
+                        f"Attempt {attempt + 1} failed: {error_msg}. "
+                        "Retrying...")
+                    continue
+
+        except requests.exceptions.RequestException as e:
+            error_msg = (
+                f"Network error creating line for TR {transfer_order_number}: "
+                f"{str(e)}"
+            )
+            if attempt == max_retries - 1:
+                raise Exception(error_msg)
+            else:
+                logging.warning(
+                    f"Network error on attempt {attempt + 1}: {error_msg}. "
+                    "Retrying...")
+                continue
+
+    # This should never be reached, but just in case
+    raise Exception(
+        f"Failed to create line after {max_retries} attempts for "
+        f"TR {transfer_order_number}"
+    )
 
 
 def get_replenishment_data(replenishment_id: str) -> Dict[str, Any]:
@@ -465,7 +979,7 @@ def send_replenishment_summary_email(
         )
         missing_skus_table += (
             "<tr><th>Store</th><th>SKU</th>"
-            "<th>Quantity</th><th>Error</th></tr>"
+            "<th>Quantity</th><th>Error</th><th>TR Number</th></tr>"
         )
 
         for sku in missing_skus:
@@ -474,11 +988,12 @@ def send_replenishment_summary_email(
             missing_skus_table += f"<td>{sku.get('SKU', 'N/A')}</td>"
             missing_skus_table += f"<td>{sku.get('QUANTITY', 0)}</td>"
             missing_skus_table += f"<td>{sku.get('ERROR', 'Unknown')}</td>"
+            missing_skus_table += f"<td>{sku.get('TR_NUMBER', 'N/A')}</td>"
             missing_skus_table += "</tr>"
 
         missing_skus_table += "</table>"
     else:
-        missing_skus_table = "<p>No missing SKUs</p>"
+        missing_skus_table = "<p>No failed items</p>"
 
     html_content = f"""
     <html>
@@ -516,7 +1031,7 @@ def send_replenishment_summary_email(
             <h3>Transfer Orders Summary</h3>
             {summary_table}
 
-            <h3>Missing SKUs</h3>
+            <h3>Failed Items</h3>
             {missing_skus_table}
         </div>
     </body>
@@ -536,6 +1051,19 @@ def process_replenishment(**context):
     """
     Main function to process a replenishment and create it in ERP.
     """
+    # Show testing configuration if enabled
+    if TESTING_CONFIG['enable_error_simulation']:
+        logging.info("🧪 [TESTING] Error simulation ENABLED")
+        error_probs = TESTING_CONFIG['error_probabilities']
+        error_count = sum(1 for p in error_probs.values() if p > 0)
+        fatal_prob = TESTING_CONFIG['fatal_error_probability']
+        if error_count > 0 or fatal_prob > 0:
+            fatal_msg = ', fatal errors enabled' if fatal_prob > 0 else ''
+            logging.info(f"🧪 [TESTING] {error_count} error types "
+                         f"configured{fatal_msg}")
+    else:
+        logging.info("✅ [PRODUCTION] Error simulation DISABLED")
+
     # Get replenishment ID from DAG run configuration
     dag_run = context['dag_run']
     replenishment_id = dag_run.conf.get('replenishmentID')
@@ -581,20 +1109,17 @@ def process_replenishment(**context):
 
     # Get ERP token
     token = get_erp_token()
-    logging.info("Retrieved ERP token successfully")
 
     # Process each store
     erp_tr_numbers = []
     erp_lines_with_info = []
+    failed_lines = []  # Track failed line creations
 
     for store, store_lines in lines_by_store.items():
         logging.info(f"Creating ERP header for store: {store}")
         try:
             # Create TransferHeader for this store
             transfer_order_number = create_erp_header(token, store)
-            logging.info(
-                f"Created ERP header for store {store}: "
-                f"{transfer_order_number}")
 
             erp_tr_numbers.append(transfer_order_number)
 
@@ -624,26 +1149,52 @@ def process_replenishment(**context):
                     "LineNumber": i + 1
                 }
 
-                logging.info(
-                    f"Creating ERP line for {transfer_order_number}, "
-                    f"line {i+1}")
-                line_result = \
-                    create_erp_line(token, transfer_order_number, line_data)
+                try:
+                    line_result = create_erp_line(
+                        token, transfer_order_number, line_data)
 
-                erp_lines_with_info.append({
-                    "SKU": line['SKU'],
-                    "STORE": line['TIENDA'],
-                    "ERP_TR_ID": transfer_order_number,
-                    "ERP_LINE_ID": line_result["ERP_LINE_ID"]
-                })
+                    erp_lines_with_info.append({
+                        "SKU": line['SKU'],
+                        "STORE": line['TIENDA'],
+                        "ERP_TR_ID": transfer_order_number,
+                        "ERP_LINE_ID": line_result["ERP_LINE_ID"]
+                    })
 
-                logging.info(
-                    f"Created ERP line for {transfer_order_number}, "
-                    f"line {i+1}: {line_result}")
+                except Exception as line_error:
+                    # Log the error but continue processing other lines
+                    error_msg = str(line_error)
+                    logging.error(
+                        f"Failed to create line {i+1} for "
+                        f"{transfer_order_number} (SKU: {line['SKU']}): "
+                        f"{error_msg}")
+
+                    # Add to failed lines list
+                    failed_lines.append({
+                        'STORE': line['TIENDA'],
+                        'SKU': line['SKU'],
+                        'QUANTITY': line['TRANSFERQUANTITY'],
+                        'ERROR': f"ERP Line Creation Error: {error_msg}",
+                        'TR_NUMBER': transfer_order_number,
+                        'LINE_NUMBER': i + 1
+                    })
+
+                    # Continue with next line
+                    continue
 
         except Exception as e:
             logging.error(f"Error processing store {store}: {str(e)}")
-            raise
+            # Add all lines from this store to failed lines
+            for i, line in enumerate(store_lines):
+                failed_lines.append({
+                    'STORE': line['TIENDA'],
+                    'SKU': line['SKU'],
+                    'QUANTITY': line['TRANSFERQUANTITY'],
+                    'ERROR': f"Store Processing Error: {str(e)}",
+                    'TR_NUMBER': 'N/A',
+                    'LINE_NUMBER': i + 1
+                })
+            # Continue with next store instead of raising
+            continue
 
     # Update ERP info in Snowflake
     if erp_tr_numbers and erp_lines_with_info:
@@ -654,16 +1205,32 @@ def process_replenishment(**context):
         )
         logging.info("Updated ERP info in replenishment successfully")
 
+    # Log summary of results
+    total_attempted = len(valid_lines)
+    total_successful = len(erp_lines_with_info)
+    total_failed = len(failed_lines) + len(missing_erp_data)
+
+    logging.info("Processing completed:")
+    logging.info(f"  - Successfully created: {total_successful} ERP lines")
+    if total_failed > 0:
+        logging.info(f"  - Failed to create: {total_failed} lines")
+        if len(failed_lines) > 0:
+            logging.info(f"    - API failures: {len(failed_lines)}")
+        if len(missing_erp_data) > 0:
+            logging.info(f"    - Missing ERP data: {len(missing_erp_data)}")
+
     # Prepare and send email summary
     summary = {
         "replenishment_id": replenishment_id,
         "erp_tr_numbers": erp_tr_numbers,
         "lines_created": len(erp_lines_with_info),
         "missing_skus":
-            len(missing_erp_data) if not missing_erp_data.empty else 0
+            len(missing_erp_data) if not missing_erp_data.empty else 0,
+        "failed_lines": len(failed_lines),
+        "total_failed": total_failed
     }
 
-    logging.info("Preparing email summary")
+    # Prepare and send email summary
     # Convert missing_erp_data to list of dicts for email
     missing_skus_data = []
     if not missing_erp_data.empty:
@@ -677,10 +1244,13 @@ def process_replenishment(**context):
             for _, row in missing_erp_data.iterrows()
         ]
 
+    # Combine missing SKUs with failed lines for email
+    all_failed_items = missing_skus_data + failed_lines
+
     email_data = send_replenishment_summary_email(
         replenishment_id, erp_tr_numbers,
         len(erp_lines_with_info),
-        missing_skus_data,
+        all_failed_items,
         user
     )
 
@@ -721,6 +1291,23 @@ def process_replenishment(**context):
     else:
         logging.warning("No email recipients configured, "
                         "skipping email notification")
+
+    # Decide if the DAG should be considered successful or failed
+    if total_successful == 0:
+        # If no lines were created successfully, fail the DAG
+        raise Exception(
+            f"Failed to create any ERP lines. "
+            f"Total attempted: {total_attempted}, "
+            f"Total failed: {total_failed}. "
+            f"Check the logs and email summary for details."
+        )
+    elif total_failed > 0:
+        # If some lines failed but some succeeded, log warning but don't fail
+        logging.warning(
+            f"Partial success: {total_successful} lines created successfully, "
+            f"but {total_failed} lines failed. "
+            f"Check email summary for details."
+        )
 
     return summary
 

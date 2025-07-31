@@ -206,7 +206,7 @@ def run_get_byod_accounting_transactions(**context):
     '''
     execution_date = context['execution_date']
     print(f'Execution Date: {execution_date}')
-    
+
     # Show configuration values being used
     print('[Airflow] Configuration values:')
     print(f'  - DAYS: {DAYS}')
@@ -217,7 +217,7 @@ def run_get_byod_accounting_transactions(**context):
         hour=0, minute=0, second=0, microsecond=0
     )
     start_date = end_date - timedelta(days=DAYS)
-    
+
     print(f'[Airflow] Processing accounting transactions from '
           f'{start_date} to {end_date}')
 
