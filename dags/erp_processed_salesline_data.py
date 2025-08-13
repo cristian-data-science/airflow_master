@@ -1,6 +1,7 @@
 from datetime import timedelta, datetime
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
+from airflow.models import Variable
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from dotenv import load_dotenv
 from config.erp_processed_salesline_data_config import default_args
@@ -18,9 +19,10 @@ BYOD_DATABASE = os.getenv('BYOD_DATABASE')
 BYOD_USERNAME = os.getenv('BYOD_USERNAME')
 BYOD_PASSWORD = os.getenv('BYOD_PASSWORD')
 
-DAYS = 3
-PERIOD = 'day'
-BATCH_SIZE = 10000
+DAYS = int(Variable.get("erp_processed_salesline_days", default_var="3"))
+PERIOD = Variable.get("erp_processed_salesline_period", default_var="day")
+BATCH_SIZE = int(Variable.get(
+    "erp_processed_salesline_batch_size", default_var="10000"))
 
 
 # Dag definition
@@ -52,18 +54,18 @@ def get_salesline_for_period(
     - batch_size (int, optional): Records per batch; all data if None.
     - offset (int, optional): Dataset start offset for query.
 
-    Retrieves sales data for specified periods, useful for large dataset
-    chunks.
+    Retrieves sales data for specified periods using INVOICEDATE field,
+    useful for large dataset chunks.
     '''
     if period == 'day':
-        date_filter =  \
-            f"CAST(SYNCSTARTDATETIME AS DATE) = '{date.strftime('%Y-%m-%d')}'"
+        date_filter = f"INVOICEDATE = '{date.strftime('%Y-%m-%d')}'"
     elif period == 'month':
-        date_filter = \
-            (f'YEAR(SYNCSTARTDATETIME) = {date.year} AND'
-             f' MONTH(SYNCSTARTDATETIME) = {date.month}')
+        date_filter = (
+            f'YEAR(INVOICEDATE) = {date.year} AND'
+            f' MONTH(INVOICEDATE) = {date.month}'
+        )
     elif period == 'year':
-        date_filter = f'YEAR(SYNCSTARTDATETIME) = {date.year}'
+        date_filter = f'YEAR(INVOICEDATE) = {date.year}'
 
     query = f'''
     SELECT {columns} FROM {table_name}
@@ -184,7 +186,7 @@ def get_massive_byod_processed_salesline(
 
         print(f'''
         [NEW EXECUTION]
-        - DAY TO PROCESS: {current_date}'
+        - DAY TO PROCESS: {current_date} (filtering by INVOICEDATE)
         - PERIOD: {period}''')
         offset = 0
         while True:
