@@ -183,7 +183,9 @@ class OMSDataFetcher:
                     transfer_codes[sku] = {warehouse_name}
             for line in order.get('order_line', []):
                 transfer_warehouse = ', '.join(
-                    transfer_codes.get(line['product_id']['default_code'], [])
+                    transfer_codes.get(
+                        line['product_id']['default_code'], []
+                    )
                 )
                 orders_data.append({
                     'LINE_ID': line['id'],
@@ -219,7 +221,12 @@ class OMSDataFetcher:
                     'PRICE_TOTAL': line['price_total'],
                     'PRICE_UNIT': line['price_unit'],
                     'PRODUCT_UOM_QTY': line['product_uom_qty'],
-                    'DEFAULT_CODE': line['product_id']['default_code'],
+                    'DEFAULT_CODE': (
+                        str(line['product_id']['default_code'])
+                        if line['product_id']['default_code']
+                        not in [None, False]
+                        else ''
+                    ),
                     'PRODUCT_NAME': line['product_id']['name'],
                     'EMAIL':
                         order.get('partner_id', {}).get('email', ''),
