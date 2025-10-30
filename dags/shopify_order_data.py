@@ -205,6 +205,12 @@ def get_shopify_orders(
     today = date.today()
     orders = []
 
+    url = SHOPIFY_GRAPHQL_ENDPOINT
+
+    # Log de versión de API
+    print(f'[Shopify API] Using API version: {SHOPIFY_API_VERSION}')
+    print(f'[Shopify API] Endpoint: {SHOPIFY_GRAPHQL_ENDPOINT}')
+
     # Si se desea filtrar por fecha
     if days:
         start_date = today - timedelta(days=days)
@@ -214,8 +220,6 @@ def get_shopify_orders(
     else:
         print('[Start execution] Get Shopify orders all dates')
         updated_at_filter = None
-
-    url = SHOPIFY_GRAPHQL_ENDPOINT
 
     requests_count = 0
     after_cursor = None
