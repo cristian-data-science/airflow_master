@@ -100,15 +100,11 @@ def build_graphql_query(first, after=None, updated_at_min=None):
                   }
 
                   inventoryPolicy
-                  inventoryManagement
                   selectedOptions { name value }
                   createdAt
                   updatedAt
                   taxable
                   barcode
-                  weight
-                  weightUnit
-                  requiresShipping
 
                   # Variant image
                   image {
@@ -173,6 +169,10 @@ def get_shopify_product_variants(response_limit=None, days=None):
       product variant, including details like ID, title, price, inventory
       quantity, and more.
     '''
+    # Log de versión de API
+    print(f'[Shopify API] Using API version: {SHOPIFY_API_VERSION}')
+    print(f'[Shopify API] Endpoint: {SHOPIFY_GRAPHQL_ENDPOINT}')
+
     print('[Start execution] Get Shopify product variants')
     products_with_variants = []
     batch_limit = 250
@@ -201,8 +201,13 @@ def get_shopify_product_variants(response_limit=None, days=None):
         data = response.json()
 
         if 'errors' in data:
-            print('GraphQL Errors:', data['errors'])
-            break
+            error_msg = f'GraphQL Errors: {data["errors"]}'
+            print(error_msg)
+            raise Exception(
+                f"Shopify GraphQL API returned errors. "
+                f"This usually means fields are deprecated or "
+                f"query is invalid. Errors: {data['errors']}"
+            )
 
         products_data = data['data']['products']
         products = [edge['node'] for edge in products_data['edges']]
@@ -258,7 +263,10 @@ def get_shopify_product_variants(response_limit=None, days=None):
                     'inventory_quantity': inventory_quantity,
                     'inventory_policy': variant['inventoryPolicy'].lower(),
                     'inventory_management': (
-                        variant['inventoryManagement'].lower()),
+                        variant.get('inventoryManagement', 'shopify').lower()
+                        if variant.get('inventoryManagement')
+                        else 'shopify'
+                    ),
                     'option1': next(
                         (opt['value']
                          for opt in variant['selectedOptions']
@@ -281,12 +289,12 @@ def get_shopify_product_variants(response_limit=None, days=None):
                     'updated_at': variant['updatedAt'],
                     'taxable': variant['taxable'],
                     'barcode': variant['barcode'],
-                    'weight': variant['weight'],
+                    'weight': variant.get('weight', 0),
                     'weight_unit': (
-                        'g' if variant['weightUnit'].lower() == 'grams'
-                        else variant['weightUnit'].lower()
+                        'g' if variant.get('weightUnit', '').lower() == 'grams'
+                        else variant.get('weightUnit', 'kg').lower()
                     ),
-                    'requires_shipping': variant['requiresShipping']
+                    'requires_shipping': variant.get('requiresShipping', True)
                 }
                 transformed_product['variants'].append(transformed_variant)
 
