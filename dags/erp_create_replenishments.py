@@ -11,6 +11,85 @@ import logging
 import random
 from typing import List, Dict, Any
 
+ID_WAREHOUSE_WMS = Variable.get("wms_id_warehouse", default_var="04")
+WMS_OWNER = "PATAGONIA"
+
+# Store addresses dict
+STORE_DELIVERY_INFO = {
+    "BNAVENTURA": {
+        "region": "RM",
+        "comuna": "Quilicura",
+        "ciudad": "Santiago",
+        "direccion": "San Ignacio 500. Local 12-H",
+    },
+    "MALLSPORT": {
+        "region": "RM",
+        "comuna": "Las Condes",
+        "ciudad": "Santiago",
+        "direccion": "Avda. Las Condes 13451. Local 225",
+    },
+    "PTOVARAS": {
+        "region": "X",
+        "comuna": "Puerto Varas",
+        "ciudad": "Puerto Varas",
+        "direccion": "San José 192",
+    },
+    "TEMUCO": {
+        "region": "IX",
+        "comuna": "Temuco",
+        "ciudad": "Temuco",
+        "direccion": "Avda. Alemania 0671. Local 3011",
+    },
+    "ALERCE": {
+        "region": "X",
+        "comuna": "Puerto Montt",
+        "ciudad": "Puerto Montt",
+        "direccion": "local 127 - 128",
+    },
+    "CONCEPCION": {
+        "region": "VIII",
+        "comuna": "Concepción",
+        "ciudad": "Concepción",
+        "direccion": "Avda. Jorge Alessandri 3177. Local f-114. f-116",
+    },
+    "COYHAIQUE": {
+        "region": "XI",
+        "comuna": "Coyhaique",
+        "ciudad": "Coyhaique",
+        "direccion": "Calle Plaza 485",
+    },
+    "LADEHESA": {
+        "region": "RM",
+        "comuna": "Lo Barnechea",
+        "ciudad": "Santiago",
+        "direccion": "Avda. La Dehesa 1445. Local 2074",
+    },
+    "LASCONDES": {
+        "region": "RM",
+        "comuna": "Las Condes",
+        "ciudad": "Santiago",
+        "direccion": "Avda. Presidente Kennedy 9001. Local 3024",
+    },
+    "OSORNO": {
+        "region": "X",
+        "comuna": "Osorno",
+        "ciudad": "Osorno",
+        "direccion": "Juan Mackenna 1069",
+    },
+    "PUCON": {
+        "region": "IX",
+        "comuna": "Pucón",
+        "ciudad": "Pucón",
+        "direccion": "Fresia 248. Local C",
+    },
+    "COSTANERA": {
+        "region": "RM",
+        "comuna": "Providencia",
+        "ciudad": "Santiago",
+        "direccion": "Avenida Andres Bello 2425. piso 4. local 4169",
+    },
+}
+
 
 # Testing configuration - enables realistic error simulation
 TESTING_CONFIG = {
@@ -776,15 +855,17 @@ def get_enriched_lines(replenishment_id: str) -> pd.DataFrame:
 def update_erp_info_in_replenishment(
     replenishment_id: str,
     erp_trs: str,
-    lines: List[Dict[str, str]]
+    lines: List[Dict[str, str]],
+    wms_status_by_tr: Dict[str, Dict[str, Any]] = None
 ):
     """
-    Update ERP info in replenishment records using a temporary
+    Update ERP info and WMS status in replenishment records using a temporary
     table for efficiency.
     Args:
         replenishment_id: The replenishment ID.
         erp_trs: Comma-separated list of ERP transfer IDs.
         lines: List of line info with ERP IDs.
+        wms_status_by_tr: Dict with TR_ID as key and WMS status as value.
     """
     from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
     import uuid
@@ -876,6 +957,204 @@ def update_erp_info_in_replenishment(
     logging.info("Updated ERP info in replenishment "
                  "successfully with batch update")
 
+    # Update WMS status if provided
+    if wms_status_by_tr:
+        for tr_id, status in wms_status_by_tr.items():
+            wms_status = status.get('message', 'Unknown')
+
+            update_query = f"""
+            UPDATE PATAGONIA.CORE_TEST.PATCORE_REPLENISHMENTS_LINE
+            SET WMS_SEND_STATUS = '{wms_status}'
+            WHERE REPLENISHMENT_ID = '{replenishment_id}'
+            AND ERP_TR_ID = '{tr_id}'
+            """
+
+            try:
+                snowflake_hook.run(update_query)
+                logging.info(
+                    f"Updated WMS status for TR {tr_id}: {wms_status}")
+            except Exception as e:
+                logging.error(f"Error updating WMS status for TR {tr_id}: {e}")
+
+
+def build_wms_xml_document(
+    tr_id: str,
+    warehouse: int,
+    store: str,
+    fecha: str,
+    lines: List[Dict[str, Any]]
+) -> str:
+    """
+    Construye el XML SOAP para RegistrarDocumentoSalida de un TR.
+    `lines` debe contener al menos: SKU, CANTIDAD, NRO_LINEA.
+    Usa STORE_DELIVERY_INFO para completar campos de dirección según la tienda.
+    - IdOwner siempre es PATAGONIA (WMS_OWNER).
+    - IdAlmacen e IdAlmacenDestino usan el mismo valor (parametrizable arriba).
+    - PaisDespacho se deja fijo como CHL.
+    - Observaciones = "{direccion}, {ciudad}".
+    """
+    # Get dispatch info for the store;
+    # if it doesn't exist, use simple defaults
+    info = STORE_DELIVERY_INFO.get(store, {
+        "region": "",
+        "comuna": "",
+        "ciudad": "",
+        "direccion": "",
+    })
+
+    direccion = info["direccion"]
+    ciudad = info["ciudad"]
+    observaciones = f"{direccion}, {ciudad}" if direccion or ciudad else ""
+
+    detalles_xml = ""
+    for line in lines:
+        detalles_xml += f"""
+    <DetalleSalida>
+      <IdArticulo>{line['SKU']}</IdArticulo>
+      <NroLinea>{line['NRO_LINEA']}</NroLinea>
+      <NroLote></NroLote>
+      <Cantidad>{int(line['CANTIDAD'])}</Cantidad>
+    </DetalleSalida>"""
+
+    logging.info(f"Construyendo XML WMS para TR {tr_id}...")
+
+    xml = f"""<soap:Envelope \
+xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" \
+xmlns:xsd="http://www.w3.org/2001/XMLSchema" \
+xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+<soap:Body>
+<RegistrarDocumentoSalida xmlns="http://www.stgchile.cl/WMSTek/EIT/Interfaces">
+<documento>
+  <IdAlmacen>{warehouse}</IdAlmacen>
+  <IdOwner>{WMS_OWNER}</IdOwner>
+  <IdDocSalida>{tr_id}</IdDocSalida>
+  <NroReferencia>{tr_id}</NroReferencia>
+  <NroOrdenCliente></NroOrdenCliente>
+  <Tipo>TRF</Tipo>
+  <FechaEmision>{fecha}</FechaEmision>
+  <FechaCompromiso>{fecha}</FechaCompromiso>
+  <FechaExpiracion>{fecha}</FechaExpiracion>
+  <IdAlmacenDestino>{warehouse}</IdAlmacenDestino>
+  <IdCliente>76018478-0</IdCliente>
+  <CodCliente>76018478-0</CodCliente>
+  <NomCliente>Patagonia Chile Limitada</NomCliente>
+  <GiroCliente></GiroCliente>
+  <DireccionCliente />
+  <ComunaCliente />
+  <CiudadCliente />
+  <LocalidadCliente />
+  <PaisCliente />
+  <DireccionDespacho>{direccion}</DireccionDespacho>
+  <ComunaDespacho>{info['comuna']}</ComunaDespacho>
+  <CiudadDespacho>{ciudad}</CiudadDespacho>
+  <LocalidadDespacho>{info['region']}</LocalidadDespacho>
+  <PaisDespacho>CHL</PaisDespacho>
+  <Prioridad>0</Prioridad>
+  <Observaciones>{observaciones}</Observaciones>
+  <IdVendedor />
+  <NomVendedor></NomVendedor>
+  <IdSucursal>{store}</IdSucursal>
+  <FormadePago />
+  <TipoDespacho></TipoDespacho>
+  <CobroTransporte>NOR</CobroTransporte>
+  <ImpFactura>N</ImpFactura>
+  <ImpGuia>N</ImpGuia>
+  <ImpBoleta>N</ImpBoleta>
+  <EstadoInterfaz>C</EstadoInterfaz>
+  <Detalles>{detalles_xml}
+  </Detalles>
+</documento>
+</RegistrarDocumentoSalida>
+</soap:Body>
+</soap:Envelope>"""
+    return xml
+
+
+def send_single_tr_to_wms(
+    tr_id: str,
+    store: str,
+    successful_lines_for_tr: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """
+    Envía un TR específico al WMS, usando sus líneas creadas
+    exitosamente en el ERP.
+    successful_lines_for_tr debe contener dicts con:
+      - SKU
+      - STORE
+      - CANTIDAD
+      - NRO_LINEA
+
+    Returns:
+        Dict con 'success' (bool), 'message' (str),
+        y 'status_code' (int opcional)
+    """
+    import requests
+    from requests.auth import HTTPBasicAuth
+    from datetime import datetime
+
+    # WMS Settings from environment variables
+    wms_url = os.environ.get('WMS_TEK2_URL')
+    wms_username = os.environ.get('WMS_TEK2_USER')
+    wms_password = os.environ.get('WMS_TEK2_PASS')
+
+    if not all([wms_url, wms_username, wms_password]):
+        raise ValueError("Missing WMS credentials in environment variables")
+
+    headers = {
+        "Content-Type": "text/xml; charset=utf-8",
+        "SOAPAction": (
+            '"http://www.stgchile.cl/WMSTek/EIT/Interfaces/'
+            'RegistrarDocumentoSalida"'
+        ),
+    }
+
+    fecha = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+
+    xml_body = build_wms_xml_document(
+        tr_id=tr_id,
+        warehouse=ID_WAREHOUSE_WMS,
+        store=store,
+        fecha=fecha,
+        lines=successful_lines_for_tr,
+    )
+
+    # Log the complete XML that will be sent
+    logging.info(
+        f"[WMS] XML completo a enviar para TR {tr_id} (store {store}):"
+    )
+    logging.info(f"\n{xml_body}")
+    logging.info(f"[WMS] Fin del XML para TR {tr_id}")
+
+    logging.info(f"Enviando TR {tr_id} (store {store}) al WMS...")
+    resp = requests.post(
+        wms_url,
+        headers=headers,
+        data=xml_body.encode("utf-8"),
+        auth=HTTPBasicAuth(wms_username, wms_password),
+        timeout=30
+    )
+
+    if resp.status_code != 200:
+        error_msg = f"Error HTTP {resp.status_code}: {resp.text[:200]}"
+        logging.error(
+            f"Error HTTP enviando TR {tr_id} al WMS: "
+            f"{resp.status_code} {resp.text[:500]}"
+        )
+        return {
+            'success': False,
+            'message': error_msg,
+            'status_code': resp.status_code
+        }
+    else:
+        logging.info(
+            f"Respuesta WMS para TR {tr_id}: {resp.text[:500]}"
+        )
+        return {
+            'success': True,
+            'message': 'Enviado exitosamente al WMS',
+            'status_code': 200
+        }
+
 
 def send_replenishment_summary_email(
     replenishment_id: str,
@@ -913,7 +1192,8 @@ def send_replenishment_summary_email(
     query = f"""
     SELECT
         ERP_TR_ID, STORE, COUNT(*) as LINE_COUNT,
-        SUM(REPLENISHMENT) as TOTAL_UNITS
+        SUM(REPLENISHMENT) as TOTAL_UNITS,
+        MAX(WMS_SEND_STATUS) as WMS_STATUS
     FROM PATAGONIA.CORE_TEST.PATCORE_REPLENISHMENTS_LINE
     WHERE REPLENISHMENT_ID = '{replenishment_id}'
     AND ERP_TR_ID IS NOT NULL
@@ -954,16 +1234,20 @@ def send_replenishment_summary_email(
         summary_table = "<table border='1' cellpadding='5' cellspacing='0'>"
         header_row = (
             "<tr><th>Store</th><th>ERP Transfer</th>"
-            "<th>Line Count</th><th>Total Units</th></tr>"
+            "<th>Line Count</th><th>Total Units</th>"
+            "<th>WMS Status</th></tr>"
         )
         summary_table += header_row
 
         for _, row in summary.iterrows():
+            wms_status = row.get('WMS_STATUS', 'N/A') or 'N/A'
+
             summary_table += "<tr>"
             summary_table += f"<td>{row['STORE']}</td>"
             summary_table += f"<td>{row['ERP_TR_ID']}</td>"
             summary_table += f"<td>{row['LINE_COUNT']}</td>"
             summary_table += f"<td>{row['TOTAL_UNITS']}</td>"
+            summary_table += f"<td>{wms_status}</td>"
             summary_table += "</tr>"
 
         summary_table += "</table>"
@@ -1068,6 +1352,7 @@ def process_replenishment(**context):
     dag_run = context['dag_run']
     replenishment_id = dag_run.conf.get('replenishmentID')
     user = dag_run.conf.get('user')
+    send_to_wms = dag_run.conf.get('sendToWMS', False)
 
     if not replenishment_id:
         raise ValueError(
@@ -1114,6 +1399,7 @@ def process_replenishment(**context):
     erp_tr_numbers = []
     erp_lines_with_info = []
     failed_lines = []  # Track failed line creations
+    wms_status_by_tr = {}  # Track WMS send status per TR
 
     for store, store_lines in lines_by_store.items():
         logging.info(f"Creating ERP header for store: {store}")
@@ -1127,6 +1413,8 @@ def process_replenishment(**context):
             from datetime import timezone
             now = datetime.now(timezone.utc)
             formatted_date = now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+            successful_lines_for_tr = []
 
             # Create lines for this Transfer Order
             for i, line in enumerate(store_lines):
@@ -1160,6 +1448,13 @@ def process_replenishment(**context):
                         "ERP_LINE_ID": line_result["ERP_LINE_ID"]
                     })
 
+                    successful_lines_for_tr.append({
+                        "SKU": line['SKU'],
+                        "STORE": line['TIENDA'],
+                        "CANTIDAD": line['TRANSFERQUANTITY'],
+                        "NRO_LINEA": i + 1
+                    })
+
                 except Exception as line_error:
                     # Log the error but continue processing other lines
                     error_msg = str(line_error)
@@ -1181,6 +1476,32 @@ def process_replenishment(**context):
                     # Continue with next line
                     continue
 
+            # Send to WMS if enabled
+            if send_to_wms and successful_lines_for_tr:
+                try:
+                    wms_result = send_single_tr_to_wms(
+                        transfer_order_number,
+                        store,
+                        successful_lines_for_tr
+                    )
+                    wms_status_by_tr[transfer_order_number] = wms_result
+                except Exception as wms_error:
+                    error_msg = f"Exception: {str(wms_error)[:200]}"
+                    logging.error(
+                        f"Error enviando TR {transfer_order_number} "
+                        f"de tienda {store} al WMS: {wms_error}"
+                    )
+                    wms_status_by_tr[transfer_order_number] = {
+                        'success': False,
+                        'message': error_msg
+                    }
+            elif not send_to_wms:
+                # Mark that sending to WMS was disabled
+                wms_status_by_tr[transfer_order_number] = {
+                    'success': None,
+                    'message': 'Envío a WMS desactivado'
+                }
+
         except Exception as e:
             logging.error(f"Error processing store {store}: {str(e)}")
             # Add all lines from this store to failed lines
@@ -1196,14 +1517,17 @@ def process_replenishment(**context):
             # Continue with next store instead of raising
             continue
 
-    # Update ERP info in Snowflake
+    # Update ERP info and WMS status in Snowflake
     if erp_tr_numbers and erp_lines_with_info:
         erp_trs_str = ', '.join(erp_tr_numbers)
-        logging.info(f"Updating replenishment with ERP TRs: {erp_trs_str}")
+        logging.info(
+            f"Updating replenishment with ERP TRs: {erp_trs_str}")
         update_erp_info_in_replenishment(
-            replenishment_id, erp_trs_str, erp_lines_with_info
+            replenishment_id, erp_trs_str, erp_lines_with_info,
+            wms_status_by_tr
         )
-        logging.info("Updated ERP info in replenishment successfully")
+        logging.info(
+            "Updated ERP info and WMS status in replenishment successfully")
 
     # Log summary of results
     total_attempted = len(valid_lines)
