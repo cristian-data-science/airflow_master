@@ -1,10 +1,12 @@
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.python_operator import PythonOperator
+from airflow.operators.email import EmailOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
+import tempfile
 from config.carbonfootprint_exitdocs_config import (
     default_args,
     carbonfootprint_exitdocs_columns,
@@ -29,6 +31,12 @@ DEFAULT_EMISSIONS_FACTOR = \
     float(Variable.get(
         "carbonfootprint_default_emissions_factor",
         default_var="0.12418"))
+
+# Default email recipients for carbon footprint report
+DEFAULT_EMAILS = [
+    'enrique.urrutia@patagonia.com',
+    'juan.simunovic@patagonia.com'
+]
 
 # Airflow Variables for date range (format: YYYY-MM-DD)
 # Can be configured from Airflow UI
@@ -631,19 +639,187 @@ def calculate_carbon_footprint(**context):
         f"{'='*50}"
     )
 
-    return {
+    # Push summary to XCom for email task (NOT the full data)
+    result = {
         'records_processed': len(df_output),
         'tr_count': tr_count,
         'wholesale_count': wholesale_count,
         'errors': errors_count,
         'total_distance_km': total_distance,
-        'total_weight_kg': total_weight
+        'total_weight_kg': total_weight,
+        'start_date': start_date.strftime('%Y-%m-%d'),
+        'end_date': end_date.strftime('%Y-%m-%d'),
+        'emissions_factor': emissions_factor
+    }
+
+    return result
+
+
+def send_carbon_footprint_email(**context):
+    """
+    Sends an email with the carbon footprint data as CSV attachment.
+    Only sends if carbonfootprint_send_email variable is 'true' (default).
+    Fetches data directly from Snowflake to avoid XCom size limits.
+    """
+    # Check if email should be sent
+    send_email = Variable.get(
+        "carbonfootprint_send_email", default_var="true"
+    ).lower() == 'true'
+
+    if not send_email:
+        logging.info("Email sending is disabled. Skipping email task.")
+        return {'email_sent': False, 'reason': 'disabled'}
+
+    # Get summary from previous task (small data only)
+    ti = context['ti']
+    result = ti.xcom_pull(task_ids='calculate_carbon_footprint')
+
+    if not result or result.get('records_processed', 0) == 0:
+        logging.warning("No data to send. Skipping email.")
+        return {'email_sent': False, 'reason': 'no_data'}
+
+    # Get date range from result
+    start_date = result['start_date']
+    end_date = result['end_date']
+
+    # Fetch data directly from Snowflake (avoid XCom size limits)
+    logging.info(
+        f"Fetching data from Snowflake for period {start_date} to {end_date}"
+    )
+    hook = SnowflakeHook(snowflake_conn_id=SNOWFLAKE_CONN_ID)
+
+    query = f"""
+    SELECT
+        ORIGIN_NAME,
+        ORIGIN_ZIP_CODE,
+        CHANNEL,
+        DESTINATION_ZIP_CODE,
+        DESTINATION_ADDRESS,
+        MODE,
+        DISTANCE_KM,
+        WEIGHT_KG,
+        EMISSIONS_FACTOR,
+        IS_ELECTRIC,
+        FECHA,
+        REFERENCE_NUMBER
+    FROM PATAGONIA.CORE_TEST.CARBONFOOTPRINT_EXITDOCS
+    WHERE FECHA >= '{start_date}'
+      AND FECHA <= '{end_date}'
+    ORDER BY FECHA, CHANNEL, REFERENCE_NUMBER
+    """
+
+    df = hook.get_pandas_df(query)
+    logging.info(f"Fetched {len(df)} records from Snowflake for email")
+
+    if df.empty:
+        logging.warning("No data found in Snowflake for the date range.")
+        return {'email_sent': False, 'reason': 'no_data_in_snowflake'}
+
+    # Get email recipients
+    email_recipients_str = Variable.get(
+        'carbonfootprint_emails',
+        default_var=','.join(DEFAULT_EMAILS)
+    )
+    email_recipients = [
+        email.strip() for email in email_recipients_str.split(',')
+    ]
+
+    # Create CSV file with semicolon separator and UTF-8 encoding
+    csv_filename = f"HdC TRs & Wholesale del {start_date} al {end_date}.csv"
+    temp_dir = tempfile.gettempdir()
+    csv_path = os.path.join(temp_dir, csv_filename)
+    df.to_csv(csv_path, index=False, sep=';', encoding='utf-8-sig')
+
+    logging.info(f"CSV file created: {csv_path}")
+
+    # Build email content from XCom summary
+    tr_count = result.get('tr_count', 0)
+    wholesale_count = result.get('wholesale_count', 0)
+    total_records = result.get('records_processed', 0)
+    total_distance = result.get('total_distance_km', 0)
+    total_weight = result.get('total_weight_kg', 0)
+    emissions_factor = result.get('emissions_factor', 0)
+
+    html_content = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; }}
+            .summary {{ background-color: #f5f5f5; padding: 15px;
+                        border-radius: 5px; margin: 10px 0; }}
+            .summary h3 {{ color: #333; margin-top: 0; }}
+            .summary p {{ margin: 5px 0; }}
+            .highlight {{ color: #2e7d32; font-weight: bold; }}
+        </style>
+    </head>
+    <body>
+        <h2>Reporte de Huella de Carbono - Exit Documents</h2>
+        <p>Se ha generado el reporte de huella de carbono para el período
+           <strong>{start_date}</strong> al <strong>{end_date}</strong>.</p>
+
+        <div class="summary">
+            <h3>Resumen</h3>
+            <p><strong>Transfer Orders procesados:</strong> {tr_count}</p>
+            <p><strong>Órdenes Wholesale procesadas:</strong>
+               {wholesale_count}</p>
+            <p><strong>Total de registros:</strong>
+               <span class="highlight">{total_records}</span></p>
+            <p><strong>Distancia total (km):</strong> {total_distance:,.2f}</p>
+            <p><strong>Peso total (kg):</strong> {total_weight:,.2f}</p>
+            <p><strong>Factor de emisiones:</strong> {emissions_factor}</p>
+        </div>
+
+        <p>Los datos completos se encuentran adjuntos en el archivo CSV.</p>
+
+        <p>Saludos,<br>
+        <em>Sistema de Carbon Footprint - Airflow</em></p>
+    </body>
+    </html>
+    """
+
+    # Send email with attachment
+    email = EmailOperator(
+        task_id='send_email_internal',
+        to=email_recipients,
+        subject=(
+            f'Reporte Carbon Footprint: {start_date} a {end_date} '
+            f'({total_records} registros)'
+        ),
+        html_content=html_content,
+        files=[csv_path],
+        dag=context['dag']
+    )
+    email.execute(context=context)
+
+    logging.info(
+        f"Email sent successfully to {len(email_recipients)} recipients"
+    )
+
+    # Clean up temp file
+    try:
+        os.unlink(csv_path)
+    except Exception as e:
+        logging.warning(f"Could not delete temp file: {e}")
+
+    return {
+        'email_sent': True,
+        'recipients': email_recipients,
+        'records_sent': total_records
     }
 
 
-# Task
+# Tasks
 task_calculate_footprint = PythonOperator(
     task_id='calculate_carbon_footprint',
     python_callable=calculate_carbon_footprint,
     dag=dag,
 )
+
+task_send_email = PythonOperator(
+    task_id='send_carbon_footprint_email',
+    python_callable=send_carbon_footprint_email,
+    dag=dag,
+)
+
+# Task dependencies
+task_calculate_footprint >> task_send_email
