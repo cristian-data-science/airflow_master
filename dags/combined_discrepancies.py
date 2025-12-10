@@ -8,10 +8,19 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import logging
 
 # Load environment variables from .env
 load_dotenv()
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
+
+# Gmail SMTP configuration (from .env)
+GMAIL_USER = os.getenv('GMAIL_USER')
+GMAIL_PASS = os.getenv('GMAIL_PASS')
+EMAIL_FROM = os.getenv('EMAIL_FROM', GMAIL_USER)
 
 # Parameters for triggering the alert
 INTERVAL_DAYS = 30  # Days in the query range
@@ -26,6 +35,84 @@ DEFAULT_EMAILS = [
     'nicole.parra@patagonia.com',
     'daniela.delaveau@patagonia.com'
 ]
+
+
+def send_email_via_gmail(to_emails, subject, html_content):
+    """
+    Sends an email using Gmail SMTP.
+
+    Args:
+        to_emails: List of recipient email addresses
+        subject: Email subject
+        html_content: HTML content of the email
+    """
+    if not GMAIL_USER or not GMAIL_PASS:
+        raise ValueError(
+            "Gmail credentials not configured. "
+            "Please set GMAIL_USER and GMAIL_PASS in .env"
+        )
+
+    # Create message
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = EMAIL_FROM
+    msg['To'] = ', '.join(to_emails)
+
+    # Attach HTML content
+    html_part = MIMEText(html_content, 'html', 'utf-8')
+    msg.attach(html_part)
+
+    try:
+        # Connect to Gmail SMTP server
+        logging.info("Connecting to Gmail SMTP server...")
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_PASS)
+
+        # Send email
+        server.sendmail(EMAIL_FROM, to_emails, msg.as_string())
+        server.quit()
+
+        logging.info(
+            f"Email sent successfully via Gmail to {len(to_emails)} recipients"
+        )
+        return True
+
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f"Gmail authentication failed: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Failed to send email via Gmail: {e}")
+        raise
+
+
+def send_email(to_emails, subject, html_content, dag, context):
+    """
+    Sends an email using the configured method (sendgrid or gmail).
+
+    The method is determined by the Airflow Variable 'email_method'.
+    Default is 'sendgrid'.
+    """
+    # Get email method from Airflow Variable
+    email_method = Variable.get(
+        'email_method', default_var='sendgrid'
+    ).lower().strip()
+
+    logging.info(f"Email method configured: {email_method}")
+
+    if email_method == 'gmail':
+        # Send via Gmail SMTP
+        send_email_via_gmail(to_emails, subject, html_content)
+    else:
+        # Send via Airflow EmailOperator (SendGrid or configured SMTP)
+        email = EmailOperator(
+            task_id='send_combined_email',
+            to=to_emails,
+            subject=subject,
+            html_content=html_content,
+            dag=dag
+        )
+        email.execute(context=context)
 
 
 def check_discrepancies_and_send_combined_email(
@@ -246,15 +333,14 @@ ORDER BY
         email_recipients = \
             [email.strip() for email in email_recipients_str.split(',')]
 
-        email = EmailOperator(
-            task_id='send_combined_email',
-            to=email_recipients,
-            subject=(
-                'ALERTA: Discrepancias encontradas en Shopify, ERP y OMS'),
+        # Send email using configured method (sendgrid or gmail)
+        send_email(
+            to_emails=email_recipients,
+            subject='ALERTA: Discrepancias encontradas en Shopify, ERP y OMS',
             html_content=email_content,
-            dag=kwargs['dag']
+            dag=kwargs['dag'],
+            context=kwargs
         )
-        email.execute(context=kwargs)
     else:
         print(
             'No significant discrepancies found in OMS, Shopify, or ERP.')

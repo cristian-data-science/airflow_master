@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 import tempfile
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from config.carbonfootprint_exitdocs_config import (
     default_args,
     carbonfootprint_exitdocs_columns,
@@ -23,6 +28,11 @@ load_dotenv()
 # Environment variables
 SNOWFLAKE_CONN_ID = os.getenv('SNOWFLAKE_CONN_ID')
 
+# Gmail SMTP configuration (from .env)
+GMAIL_USER = os.getenv('GMAIL_USER')
+GMAIL_PASS = os.getenv('GMAIL_PASS')
+EMAIL_FROM = os.getenv('EMAIL_FROM', GMAIL_USER)
+
 AVERAGE_PRODUCT_WEIGHT_KG = \
       float(Variable.get(
           "carbonfootprint_average_product_weight_kg",
@@ -37,6 +47,74 @@ DEFAULT_EMAILS = [
     'enrique.urrutia@patagonia.com',
     'juan.simunovic@patagonia.com'
 ]
+
+
+def send_email_via_gmail(to_emails, subject, html_content, attachments=None):
+    """
+    Sends an email using Gmail SMTP with optional attachments.
+
+    Args:
+        to_emails: List of recipient email addresses
+        subject: Email subject
+        html_content: HTML content of the email
+        attachments: List of file paths to attach (optional)
+    """
+    if not GMAIL_USER or not GMAIL_PASS:
+        raise ValueError(
+            "Gmail credentials not configured. "
+            "Please set GMAIL_USER and GMAIL_PASS in .env"
+        )
+
+    # Create message
+    msg = MIMEMultipart('mixed')
+    msg['Subject'] = subject
+    msg['From'] = EMAIL_FROM
+    msg['To'] = ', '.join(to_emails)
+
+    # Attach HTML content
+    html_part = MIMEText(html_content, 'html', 'utf-8')
+    msg.attach(html_part)
+
+    # Attach files if provided
+    if attachments:
+        for file_path in attachments:
+            try:
+                with open(file_path, 'rb') as f:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(f.read())
+                encoders.encode_base64(part)
+                filename = os.path.basename(file_path)
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename="{filename}"'
+                )
+                msg.attach(part)
+            except Exception as e:
+                logging.error(f"Failed to attach file {file_path}: {e}")
+
+    try:
+        # Connect to Gmail SMTP server
+        logging.info("Connecting to Gmail SMTP server...")
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_PASS)
+
+        # Send email
+        server.sendmail(EMAIL_FROM, to_emails, msg.as_string())
+        server.quit()
+
+        logging.info(
+            f"Email sent successfully via Gmail to {len(to_emails)} recipients"
+        )
+        return True
+
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f"Gmail authentication failed: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Failed to send email via Gmail: {e}")
+        raise
+
 
 # Airflow Variables for date range (format: YYYY-MM-DD)
 # Can be configured from Airflow UI
@@ -777,19 +855,38 @@ def send_carbon_footprint_email(**context):
     </html>
     """
 
-    # Send email with attachment
-    email = EmailOperator(
-        task_id='send_email_internal',
-        to=email_recipients,
-        subject=(
-            f'Reporte Carbon Footprint: {start_date} a {end_date} '
-            f'({total_records} registros)'
-        ),
-        html_content=html_content,
-        files=[csv_path],
-        dag=context['dag']
+    # Send email with attachment using configured method
+    email_subject = (
+        f'Reporte Carbon Footprint: {start_date} a {end_date} '
+        f'({total_records} registros)'
     )
-    email.execute(context=context)
+
+    # Get email method from Airflow Variable
+    email_method = Variable.get(
+        'email_method', default_var='sendgrid'
+    ).lower().strip()
+
+    logging.info(f"Email method configured: {email_method}")
+
+    if email_method == 'gmail':
+        # Send via Gmail SMTP
+        send_email_via_gmail(
+            to_emails=email_recipients,
+            subject=email_subject,
+            html_content=html_content,
+            attachments=[csv_path]
+        )
+    else:
+        # Send via Airflow EmailOperator (SendGrid or configured SMTP)
+        email = EmailOperator(
+            task_id='send_email_internal',
+            to=email_recipients,
+            subject=email_subject,
+            html_content=html_content,
+            files=[csv_path],
+            dag=context['dag']
+        )
+        email.execute(context=context)
 
     logging.info(
         f"Email sent successfully to {len(email_recipients)} recipients"

@@ -10,6 +10,68 @@ import pytz
 import logging
 import random
 from typing import List, Dict, Any
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Gmail SMTP configuration (from .env)
+GMAIL_USER = os.getenv('GMAIL_USER')
+GMAIL_PASS = os.getenv('GMAIL_PASS')
+EMAIL_FROM = os.getenv('EMAIL_FROM', GMAIL_USER)
+
+
+def send_email_via_gmail(to_emails, subject, html_content):
+    """
+    Sends an email using Gmail SMTP.
+
+    Args:
+        to_emails: List of recipient email addresses
+        subject: Email subject
+        html_content: HTML content of the email
+    """
+    if not GMAIL_USER or not GMAIL_PASS:
+        raise ValueError(
+            "Gmail credentials not configured. "
+            "Please set GMAIL_USER and GMAIL_PASS in .env"
+        )
+
+    # Create message
+    msg = MIMEMultipart('alternative')
+    msg['Subject'] = subject
+    msg['From'] = EMAIL_FROM
+    msg['To'] = ', '.join(to_emails)
+
+    # Attach HTML content
+    html_part = MIMEText(html_content, 'html', 'utf-8')
+    msg.attach(html_part)
+
+    try:
+        # Connect to Gmail SMTP server
+        logging.info("Connecting to Gmail SMTP server...")
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(GMAIL_USER, GMAIL_PASS)
+
+        # Send email
+        server.sendmail(EMAIL_FROM, to_emails, msg.as_string())
+        server.quit()
+
+        logging.info(
+            f"Email sent successfully via Gmail to {len(to_emails)} recipients"
+        )
+        return True
+
+    except smtplib.SMTPAuthenticationError as e:
+        logging.error(f"Gmail authentication failed: {e}")
+        raise
+    except Exception as e:
+        logging.error(f"Failed to send email via Gmail: {e}")
+        raise
+
 
 ID_WAREHOUSE_WMS = Variable.get("wms_id_warehouse", default_var="04")
 WMS_OWNER = "PATAGONIA"
