@@ -11,8 +11,11 @@ import logging
 import random
 from typing import List, Dict, Any
 import smtplib
+import tempfile
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -24,14 +27,15 @@ GMAIL_PASS = os.getenv('GMAIL_PASS')
 EMAIL_FROM = os.getenv('EMAIL_FROM', GMAIL_USER)
 
 
-def send_email_via_gmail(to_emails, subject, html_content):
+def send_email_via_gmail(to_emails, subject, html_content, attachments=None):
     """
-    Sends an email using Gmail SMTP.
+    Sends an email using Gmail SMTP with optional attachments.
 
     Args:
         to_emails: List of recipient email addresses
         subject: Email subject
         html_content: HTML content of the email
+        attachments: List of file paths to attach (optional)
     """
     if not GMAIL_USER or not GMAIL_PASS:
         raise ValueError(
@@ -40,7 +44,7 @@ def send_email_via_gmail(to_emails, subject, html_content):
         )
 
     # Create message
-    msg = MIMEMultipart('alternative')
+    msg = MIMEMultipart('mixed')
     msg['Subject'] = subject
     msg['From'] = EMAIL_FROM
     msg['To'] = ', '.join(to_emails)
@@ -48,6 +52,23 @@ def send_email_via_gmail(to_emails, subject, html_content):
     # Attach HTML content
     html_part = MIMEText(html_content, 'html', 'utf-8')
     msg.attach(html_part)
+
+    # Attach files if provided
+    if attachments:
+        for file_path in attachments:
+            try:
+                with open(file_path, 'rb') as f:
+                    part = MIMEBase('application', 'octet-stream')
+                    part.set_payload(f.read())
+                encoders.encode_base64(part)
+                filename = os.path.basename(file_path)
+                part.add_header(
+                    'Content-Disposition',
+                    f'attachment; filename="{filename}"'
+                )
+                msg.attach(part)
+            except Exception as e:
+                logging.error(f"Failed to attach file {file_path}: {e}")
 
     try:
         # Connect to Gmail SMTP server
@@ -1393,6 +1414,76 @@ def send_replenishment_summary_email(
     }
 
 
+def generate_replenishment_csv(replenishment_id: str) -> str:
+    """
+    Generates a CSV file with the replenishment results.
+
+    Args:
+        replenishment_id: The replenishment ID.
+
+    Returns:
+        Path to the generated CSV file.
+    """
+    from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+
+    snowflake_conn_id = default_args['snowflake_conn_id']
+    snowflake_hook = SnowflakeHook(snowflake_conn_id=snowflake_conn_id)
+
+    query = f"""
+    SELECT
+        ROW_NUMBER() OVER (PARTITION BY rpl.STORE ORDER BY rpl.SKU)
+            AS LINENUMBER,
+        prod.ITEMNUMBER,
+        'DISPONIBLE' AS ORDEREDINVENTORYSTATUSID,
+        prod.COLOR AS PRODUCTCOLORID,
+        prod.CONFIGURATION AS PRODUCTCONFIGURATIONID,
+        prod.SIZE AS PRODUCTSIZEID,
+        'GEN' AS PRODUCTSTYLEID,
+        'CD' AS SHIPPINGWAREHOUSEID,
+        'GENERICA' AS SHIPPINGWAREHOUSELOCATIONID,
+        rpl.REPLENISHMENT AS TRANSFERQUANTITY,
+        rpl.STORE AS TIENDA,
+        rpl.SKU,
+        prod.TEAM,
+        prod.CATEGORY,
+        prod.PRODUCTNAME,
+        rpl.DELIVERY,
+        rpl.ERP_TR_ID,
+        rpl.ERP_LINE_ID
+    FROM PATAGONIA.CORE_TEST.PATCORE_REPLENISHMENTS_LINE rpl
+    INNER JOIN PATAGONIA.CORE_TEST.ERP_PRODUCTS prod
+        ON rpl.SKU = prod.SKU
+    WHERE rpl.REPLENISHMENT_ID = '{replenishment_id}'
+    ORDER BY rpl.STORE, LINENUMBER
+    """
+
+    df = snowflake_hook.get_pandas_df(query)
+
+    if df.empty:
+        logging.warning(
+            f"No data found for replenishment {replenishment_id}")
+        return None
+
+    logging.info(
+        f"Retrieved {len(df)} records for replenishment CSV")
+
+    # Generate filename with timestamp
+    chile_tz = pytz.timezone('America/Santiago')
+    current_time = datetime.now(chile_tz)
+    timestamp = current_time.strftime('%Y%m%d_%H%M%S')
+    filename = f"replenishment_{replenishment_id}_{timestamp}.csv"
+
+    # Create temp file
+    csv_path = os.path.join(tempfile.gettempdir(), filename)
+
+    # Save to CSV with semicolon separator and UTF-8 BOM for Excel
+    # UTF-8-sig handles all Unicode characters
+    df.to_csv(csv_path, index=False, sep=';', encoding='utf-8-sig')
+
+    logging.info(f"Generated CSV file: {csv_path}")
+    return csv_path
+
+
 def process_replenishment(**context):
     """
     Main function to process a replenishment and create it in ERP.
@@ -1640,6 +1731,10 @@ def process_replenishment(**context):
         user
     )
 
+    # Generate CSV with replenishment results
+    csv_path = generate_replenishment_csv(replenishment_id)
+    attachments = [csv_path] if csv_path else []
+
     # Send email
     from airflow.operators.email import EmailOperator
 
@@ -1665,15 +1760,36 @@ def process_replenishment(**context):
     recipients = [email for email in recipients if email]
 
     if recipients:
-        email = EmailOperator(
-            task_id='send_email_summary',
-            to=recipients,
-            subject=email_data['subject'],
-            html_content=email_data['html_content'],
-            dag=context['dag']
-        )
-        email.execute(context=context)
+        # Get email method from Airflow Variable
+        email_method = Variable.get(
+            'email_method', default_var='sendgrid'
+        ).lower().strip()
+
+        logging.info(f"Email method configured: {email_method}")
+
+        if email_method == 'gmail':
+            # Send via Gmail SMTP
+            send_email_via_gmail(
+                to_emails=recipients,
+                subject=email_data['subject'],
+                html_content=email_data['html_content'],
+                attachments=attachments
+            )
+        else:
+            # Send via Airflow EmailOperator (SendGrid or configured SMTP)
+            email = EmailOperator(
+                task_id='send_email_summary',
+                to=recipients,
+                subject=email_data['subject'],
+                html_content=email_data['html_content'],
+                files=attachments,
+                dag=context['dag']
+            )
+            email.execute(context=context)
+
         logging.info(f"Email summary sent to: {', '.join(recipients)}")
+        if csv_path:
+            logging.info(f"CSV attachment included: {csv_path}")
     else:
         logging.warning("No email recipients configured, "
                         "skipping email notification")
