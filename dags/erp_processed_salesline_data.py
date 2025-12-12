@@ -279,7 +279,7 @@ def process_sales_orders(start_date, end_date):
             MAX(CREATEDTRANSACTIONDATE2) AS CreatedTransaction,
             MAX(INVOICEID) AS InvoiceID,
             MAX(CUSTACCOUNT) AS CustomerAccount,
-            MAX(ORGANIZATIONNAME) AS OrganizationName,
+            LEFT(MAX(ORGANIZATIONNAME), 100) AS OrganizationName,
             SUM(SALESPRICE) AS SalesPriceTotal,
             SUM(QTY) AS QtyTotal,
             MAX(CURRENCYCODE) AS CurrencyCode,
